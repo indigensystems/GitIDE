@@ -124,7 +124,6 @@ export class TaskListPanel extends React.Component<ITaskListPanelProps, ITaskLis
         <header className="task-list-header">
           <h2>My Tasks</h2>
           <div className="task-list-controls">
-            {this.renderViewTabs()}
             {this.renderSortDropdown()}
             <button
               className="task-refresh-button"
@@ -220,32 +219,6 @@ export class TaskListPanel extends React.Component<ITaskListPanelProps, ITaskLis
         <Octicon symbol={octicons.tasklist} />
         <p>{message}</p>
         {hint && <p className="hint">{hint}</p>}
-      </div>
-    )
-  }
-
-  private renderViewTabs() {
-    const { viewMode, onViewModeChange } = this.props
-    const modes: Array<{ mode: TaskViewMode; label: string; icon: typeof octicons.rows }> = [
-      { mode: 'all', label: 'All', icon: octicons.rows },
-      { mode: 'repo', label: 'Repo', icon: octicons.repo },
-      { mode: 'pinned', label: 'Pinned', icon: octicons.pin },
-      { mode: 'active', label: 'Active', icon: octicons.play },
-    ]
-
-    return (
-      <div className="task-view-tabs">
-        {modes.map(({ mode, label, icon }) => (
-          <button
-            key={mode}
-            className={classNames('task-view-tab', { active: viewMode === mode })}
-            onClick={() => onViewModeChange(mode)}
-            title={label}
-          >
-            <Octicon symbol={icon} />
-            <span className="tab-label">{label}</span>
-          </button>
-        ))}
       </div>
     )
   }
