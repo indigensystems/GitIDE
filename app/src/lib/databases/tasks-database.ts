@@ -21,6 +21,21 @@ export interface ITask {
   /** Issue title */
   readonly title: string
 
+  /** Issue body/description (markdown) */
+  readonly body: string | null
+
+  /** Author login name */
+  readonly authorLogin: string | null
+
+  /** Author avatar URL */
+  readonly authorAvatarUrl: string | null
+
+  /** ISO timestamp of when the issue was created */
+  readonly createdAt: string | null
+
+  /** Number of comments on the issue */
+  readonly commentCount: number
+
   /** Local repository database ID */
   readonly repositoryId: number
 

@@ -64,6 +64,24 @@ export interface ITasksState {
 
   /** GitHub Projects V2 linked to the repository */
   readonly projects: ReadonlyArray<IAPIProjectV2>
+
+  /** Filter by project title (null = all projects) */
+  readonly projectFilter: string | null
+
+  /** Filter by project status (null = all statuses) */
+  readonly statusFilter: string | null
+
+  /** Default project filter (persisted) */
+  readonly defaultProject: string | null
+
+  /** Default status filter (persisted) - defaults to 'Todo' */
+  readonly defaultStatus: string | null
+
+  /** Available projects to filter by (derived from tasks) */
+  readonly availableProjects: ReadonlyArray<string>
+
+  /** Available statuses to filter by (derived from tasks) */
+  readonly availableStatuses: ReadonlyArray<string>
 }
 
 export { ITaskList, ITimeEntry }
@@ -91,6 +109,12 @@ export class TasksStore {
     taskLists: [],
     timeEntries: [],
     projects: [],
+    projectFilter: null,
+    statusFilter: 'Todo', // Default to 'Todo' status
+    defaultProject: null,
+    defaultStatus: 'Todo',
+    availableProjects: [],
+    availableStatuses: [],
   }
 
   public constructor(db: TasksDatabase) {
@@ -193,6 +217,9 @@ export class TasksStore {
         let projectStatus: string | null = null
         let projectTitle: string | null = null
 
+        // eslint-disable-next-line no-console
+        console.log(`[syncTasks] issue #${apiIssue.number} projectItems:`, projectItems)
+
         if (projectItems.length > 0) {
           // Use the first project item's status
           const firstItem = projectItems[0]
@@ -207,10 +234,18 @@ export class TasksStore {
           }
         }
 
+        // eslint-disable-next-line no-console
+        console.log(`[syncTasks] issue #${apiIssue.number} parsed: projectTitle="${projectTitle}", projectStatus="${projectStatus}"`)
+
         const taskData: Partial<ITask> = {
           issueId,
           issueNumber: apiIssue.number,
           title: apiIssue.title,
+          body: apiIssue.body ?? null,
+          authorLogin: apiIssue.user?.login ?? null,
+          authorAvatarUrl: apiIssue.user?.avatar_url ?? null,
+          createdAt: apiIssue.created_at ?? null,
+          commentCount: apiIssue.comments ?? 0,
           repositoryId: repository.dbID,
           repositoryName: `${repository.owner.login}/${repository.name}`,
           url: apiIssue.html_url,
@@ -228,6 +263,11 @@ export class TasksStore {
           // New task with default local fields
           await this.db.tasks.add({
             ...taskData,
+            body: taskData.body ?? null,
+            authorLogin: taskData.authorLogin ?? null,
+            authorAvatarUrl: taskData.authorAvatarUrl ?? null,
+            createdAt: taskData.createdAt ?? null,
+            commentCount: taskData.commentCount ?? 0,
             isPinned: false,
             localOrder: 0,
             isActive: false,
@@ -271,13 +311,45 @@ export class TasksStore {
     // Filter to only open tasks
     tasks = tasks.filter(t => t.state === 'OPEN')
 
+    // Compute available projects and statuses from all tasks (before filtering)
+    const projectSet = new Set<string>()
+    const statusSet = new Set<string>()
+    for (const task of tasks) {
+      if (task.projectTitle) {
+        projectSet.add(task.projectTitle)
+      }
+      if (task.projectStatus) {
+        statusSet.add(task.projectStatus)
+      }
+    }
+    const availableProjects = Array.from(projectSet).sort()
+    const availableStatuses = Array.from(statusSet).sort()
+
+    // Apply project filter
+    const { projectFilter, statusFilter } = this.state
+    if (projectFilter) {
+      tasks = tasks.filter(t => t.projectTitle === projectFilter)
+    }
+
+    // Apply status filter
+    if (statusFilter) {
+      tasks = tasks.filter(t => t.projectStatus === statusFilter)
+    }
+
     // Apply sorting
     tasks = this.sortTasks(tasks)
 
     // Find active task
     const activeTask = tasks.find(t => t.isActive) ?? null
 
-    this.state = { ...this.state, tasks, viewMode: mode, activeTask }
+    this.state = {
+      ...this.state,
+      tasks,
+      viewMode: mode,
+      activeTask,
+      availableProjects,
+      availableStatuses,
+    }
     this.emitUpdate()
   }
 
@@ -389,6 +461,62 @@ export class TasksStore {
   /** Change the view mode */
   public async setViewMode(mode: TaskViewMode): Promise<void> {
     await this.loadTasks(mode)
+  }
+
+  /** Set project filter */
+  public async setProjectFilter(project: string | null): Promise<void> {
+    this.state = { ...this.state, projectFilter: project }
+    await this.loadTasks()
+  }
+
+  /** Set status filter */
+  public async setStatusFilter(status: string | null): Promise<void> {
+    this.state = { ...this.state, statusFilter: status }
+    await this.loadTasks()
+  }
+
+  /** Set default project (persisted) */
+  public setDefaultProject(project: string | null): void {
+    this.state = {
+      ...this.state,
+      defaultProject: project,
+      projectFilter: project,
+    }
+    this.emitUpdate()
+  }
+
+  /** Set default status (persisted) */
+  public setDefaultStatus(status: string | null): void {
+    this.state = {
+      ...this.state,
+      defaultStatus: status,
+      statusFilter: status,
+    }
+    this.emitUpdate()
+  }
+
+  /** Get unique project titles from all tasks */
+  public async getAvailableProjects(): Promise<ReadonlyArray<string>> {
+    const tasks = await this.db.getAllTasks()
+    const projectTitles = new Set<string>()
+    for (const task of tasks) {
+      if (task.projectTitle) {
+        projectTitles.add(task.projectTitle)
+      }
+    }
+    return Array.from(projectTitles).sort()
+  }
+
+  /** Get unique status values from all tasks */
+  public async getAvailableStatuses(): Promise<ReadonlyArray<string>> {
+    const tasks = await this.db.getAllTasks()
+    const statuses = new Set<string>()
+    for (const task of tasks) {
+      if (task.projectStatus) {
+        statuses.add(task.projectStatus)
+      }
+    }
+    return Array.from(statuses).sort()
   }
 
   /** Set collaborators for the current repository */

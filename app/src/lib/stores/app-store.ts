@@ -1983,6 +1983,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
       this.pullRequestCoordinator.getAllPullRequests(repository).then(prs => {
         this.onPullRequestChanged(repository, prs)
       })
+
+      // Auto-refresh tasks when repository is selected
+      this._refreshTasks(repository).catch(e => {
+        log.warn(`Unable to auto-refresh tasks for ${repository.name}`, e)
+      })
+
+      // Also fetch projects for the project status dropdown
+      this._fetchProjects(repository).catch(e => {
+        log.warn(`Unable to fetch projects for ${repository.name}`, e)
+      })
     }
 
     // The selected repository could have changed while we were refreshing.
@@ -8662,6 +8672,18 @@ export class AppStore extends TypedBaseStore<IAppState> {
     )
 
     this.tasksStore.setProjects(projects)
+    this.emitUpdate()
+  }
+
+  /** Set the task project filter */
+  public async _setTaskProjectFilter(project: string | null): Promise<void> {
+    await this.tasksStore.setProjectFilter(project)
+    this.emitUpdate()
+  }
+
+  /** Set the task status filter */
+  public async _setTaskStatusFilter(status: string | null): Promise<void> {
+    await this.tasksStore.setStatusFilter(status)
     this.emitUpdate()
   }
 }

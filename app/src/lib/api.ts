@@ -363,8 +363,13 @@ export interface IAPIMilestone {
 /** Extended issue information including assignees and labels. */
 export interface IAPIIssueWithMetadata extends IAPIIssue {
   readonly html_url: string
+  readonly body: string | null
   readonly labels?: ReadonlyArray<IAPILabel | string>
   readonly assignees?: ReadonlyArray<IAPIIdentity>
+  readonly user?: IAPIIdentity
+  readonly created_at?: string
+  readonly comments?: number
+  readonly milestone?: IAPIMilestone | null
 }
 
 /** GitHub Projects V2 status option */
@@ -1345,6 +1350,27 @@ export class API {
   }
 
   /**
+   * Fetch a single issue by number.
+   */
+  public async fetchIssue(
+    owner: string,
+    name: string,
+    issueNumber: number
+  ): Promise<IAPIIssueWithMetadata> {
+    const url = `repos/${owner}/${name}/issues/${issueNumber}`
+    try {
+      const response = await this.ghRequest('GET', url)
+      return await parsedResponse<IAPIIssueWithMetadata>(response)
+    } catch (e) {
+      log.warn(
+        `fetchIssue: failed for issue #${issueNumber} in ${owner}/${name}`,
+        e
+      )
+      throw e
+    }
+  }
+
+  /**
    * Fetch all collaborators for a repository.
    * Requires push access to the repository.
    */
@@ -1588,7 +1614,11 @@ export class API {
                 fieldValues(first: 10) {
                   nodes {
                     ... on ProjectV2ItemFieldSingleSelectValue {
-                      field { name }
+                      field {
+                        ... on ProjectV2SingleSelectField {
+                          name
+                        }
+                      }
                       name
                       optionId
                     }
@@ -1610,14 +1640,21 @@ export class API {
       }
 
       const json = await response.json()
+      // eslint-disable-next-line no-console
+      console.log(`[fetchIssueProjectItems] response for ${owner}/${name}#${issueNumber}:`, JSON.stringify(json, null, 2))
       const items = json.data?.repository?.issue?.projectItems?.nodes ?? []
 
-      return items.map((item: any) => ({
+      const result = items.map((item: any) => ({
         id: item.id,
         project: item.project,
         fieldValues: (item.fieldValues?.nodes ?? []).filter((v: any) => v.field),
       }))
+      // eslint-disable-next-line no-console
+      console.log(`[fetchIssueProjectItems] parsed result for #${issueNumber}:`, result)
+      return result
     } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error(`[fetchIssueProjectItems] error for ${owner}/${name}#${issueNumber}:`, e)
       log.warn(`fetchIssueProjectItems: failed for ${owner}/${name}#${issueNumber}`, e)
       return []
     }
@@ -1927,6 +1964,26 @@ export class API {
         e
       )
       return []
+    }
+  }
+
+  /** Creates a new comment on an issue. */
+  public async createIssueComment(
+    owner: string,
+    name: string,
+    issueNumber: number,
+    body: string
+  ): Promise<IAPIComment | null> {
+    try {
+      const path = `/repos/${owner}/${name}/issues/${issueNumber}/comments`
+      const response = await this.ghRequest('POST', path, { body: { body } })
+      return await parsedResponse<IAPIComment>(response)
+    } catch (e) {
+      log.warn(
+        `createIssueComment: failed for ${owner}/${name}/issues/${issueNumber}`,
+        e
+      )
+      return null
     }
   }
 

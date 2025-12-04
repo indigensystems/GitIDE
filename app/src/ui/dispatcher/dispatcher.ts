@@ -4091,6 +4091,16 @@ export class Dispatcher {
     this.appStore._setTaskSortOrder(order)
   }
 
+  /** Set the task project filter */
+  public setTaskProjectFilter(project: string | null): void {
+    this.appStore._setTaskProjectFilter(project)
+  }
+
+  /** Set the task status filter */
+  public setTaskStatusFilter(status: string | null): void {
+    this.appStore._setTaskStatusFilter(status)
+  }
+
   /** Reorder a task (for custom sort order) */
   public reorderTask(taskId: number, newOrder: number): Promise<void> {
     return this.appStore._reorderTask(taskId, newOrder)

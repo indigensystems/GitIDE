@@ -6,6 +6,11 @@ import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
 import classNames from 'classnames'
 
+interface ITaskListPanelState {
+  /** Whether the panel is in narrow mode (compact layout) */
+  readonly isNarrow: boolean
+}
+
 interface ITaskListPanelProps {
   /** All tasks to display */
   readonly tasks: ReadonlyArray<ITask>
@@ -24,6 +29,18 @@ interface ITaskListPanelProps {
 
   /** Whether the add task button should be enabled */
   readonly canCreateTasks: boolean
+
+  /** Current project filter (null = all projects) */
+  readonly projectFilter: string | null
+
+  /** Current status filter (null = all statuses) */
+  readonly statusFilter: string | null
+
+  /** Available projects to filter by */
+  readonly availableProjects: ReadonlyArray<string>
+
+  /** Available statuses to filter by */
+  readonly availableStatuses: ReadonlyArray<string>
 
   /** Called when a task is clicked */
   readonly onTaskClick: (task: ITask) => void
@@ -51,15 +68,59 @@ interface ITaskListPanelProps {
 
   /** Called when tasks are reordered via drag-and-drop */
   readonly onTaskReorder: (sourceTask: ITask, targetIndex: number) => void
+
+  /** Called when project filter changes */
+  readonly onProjectFilterChange: (project: string | null) => void
+
+  /** Called when status filter changes */
+  readonly onStatusFilterChange: (status: string | null) => void
 }
 
+/** Threshold width in pixels below which the panel switches to narrow mode */
+const NARROW_THRESHOLD = 280
+
 /** Panel displaying the user's assigned tasks */
-export class TaskListPanel extends React.Component<ITaskListPanelProps> {
+export class TaskListPanel extends React.Component<ITaskListPanelProps, ITaskListPanelState> {
+  private panelRef = React.createRef<HTMLDivElement>()
+  private resizeObserver: ResizeObserver | null = null
+
+  public constructor(props: ITaskListPanelProps) {
+    super(props)
+    this.state = { isNarrow: false }
+  }
+
+  public componentDidMount() {
+    this.resizeObserver = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const width = entry.contentRect.width
+        const isNarrow = width < NARROW_THRESHOLD
+        if (isNarrow !== this.state.isNarrow) {
+          this.setState({ isNarrow })
+        }
+      }
+    })
+
+    if (this.panelRef.current) {
+      this.resizeObserver.observe(this.panelRef.current)
+    }
+  }
+
+  public componentWillUnmount() {
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect()
+    }
+  }
+
   public render() {
     const { tasks, activeTask, viewMode, sortOrder, isLoading } = this.props
+    const { isNarrow } = this.state
+
+    const panelClassName = classNames('task-list-panel', {
+      narrow: isNarrow,
+    })
 
     return (
-      <div className="task-list-panel" data-sort={sortOrder}>
+      <div ref={this.panelRef} className={panelClassName} data-sort={sortOrder}>
         <header className="task-list-header">
           <h2>My Tasks</h2>
           <div className="task-list-controls">
@@ -86,6 +147,8 @@ export class TaskListPanel extends React.Component<ITaskListPanelProps> {
             </button>
           </div>
         </header>
+
+        {this.renderFilters()}
 
         {activeTask && (
           <div className="active-task-banner">
@@ -202,6 +265,68 @@ export class TaskListPanel extends React.Component<ITaskListPanelProps> {
         <option value="repository">Repository</option>
         <option value="custom">Custom Order</option>
       </select>
+    )
+  }
+
+  private renderFilters() {
+    const {
+      projectFilter,
+      statusFilter,
+      availableProjects,
+      availableStatuses,
+      onProjectFilterChange,
+      onStatusFilterChange,
+    } = this.props
+
+    // Don't render filters if we have no options
+    if (availableProjects.length === 0 && availableStatuses.length === 0) {
+      return null
+    }
+
+    return (
+      <div className="task-filters">
+        {availableProjects.length > 0 && (
+          <div className="task-filter">
+            <label htmlFor="project-filter">Project:</label>
+            <select
+              id="project-filter"
+              value={projectFilter ?? ''}
+              onChange={e =>
+                onProjectFilterChange(e.target.value === '' ? null : e.target.value)
+              }
+              className="task-filter-dropdown"
+            >
+              <option value="">All Projects</option>
+              {availableProjects.map(project => (
+                <option key={project} value={project}>
+                  {project}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {availableStatuses.length > 0 && (
+          <div className="task-filter">
+            <label htmlFor="status-filter">Status:</label>
+            <select
+              id="status-filter"
+              value={statusFilter ?? ''}
+              onChange={e =>
+                onStatusFilterChange(e.target.value === '' ? null : e.target.value)
+              }
+              className="task-filter-dropdown"
+            >
+              <option value="">All Statuses</option>
+              {availableStatuses.map(status => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
     )
   }
 }
