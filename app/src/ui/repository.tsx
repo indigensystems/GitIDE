@@ -137,8 +137,8 @@ interface IRepositoryViewState {
 const enum Tab {
   Changes = 0,
   History = 1,
-  Tasks = 2,
-  Issues = 3,
+  Issues = 2,
+  Tasks = 3,
 }
 
 export class RepositoryView extends React.Component<
@@ -226,12 +226,12 @@ export class RepositoryView extends React.Component<
           <span>History</span>
         </div>
 
-        <div className="with-indicator" id="tasks-tab">
-          <span>Tasks</span>
-        </div>
-
         <div className="with-indicator" id="issues-tab">
           <span>Issues</span>
+        </div>
+
+        <div className="with-indicator" id="tasks-tab">
+          <span>Tasks</span>
         </div>
       </TabBar>
     )

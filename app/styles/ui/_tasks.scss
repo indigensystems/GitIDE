@@ -197,7 +197,6 @@
 .task-list {
   flex: 1;
   overflow-y: auto;
-  padding: var(--spacing);
 }
 
 .task-list-empty-state {
@@ -231,23 +230,31 @@
   }
 }
 
-// Task item styles
+// Task item styles - matches issue item visual style
 
 .task-item {
-  padding: var(--spacing);
-  margin-bottom: var(--spacing);
-  border: var(--base-border);
-  border-radius: var(--border-radius);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-half);
+  padding: var(--spacing) var(--spacing-double);
+  border-bottom: var(--base-border);
   cursor: pointer;
-  transition: border-color 0.15s, background-color 0.15s;
+  position: relative;
 
   &:hover {
-    border-color: var(--box-border-accent-color);
+    background: var(--box-alt-background-color);
+
+    .task-open-external {
+      opacity: 1;
+    }
   }
 
   &.active {
-    border-color: var(--link-button-color);
     background: var(--box-selected-background-color);
+  }
+
+  &.closed {
+    opacity: 0.7;
   }
 
   &.pinned {
@@ -257,41 +264,134 @@
 
 .task-item-header {
   display: flex;
-  align-items: center;
-  gap: var(--spacing);
-  margin-bottom: var(--spacing-half);
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary-color);
+  align-items: flex-start;
+  gap: var(--spacing-half);
 
-  .task-number {
-    font-weight: var(--font-weight-semibold);
+  .task-state-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+
+    &.open {
+      color: var(--color-issues-open);
+    }
+
+    &.closed {
+      color: var(--color-issues-closed);
+    }
   }
 
-  .task-repo {
-    flex: 1;
+  .task-number {
+    color: var(--text-secondary-color);
+    font-size: var(--font-size-sm);
+    flex-shrink: 0;
+  }
+
+  .task-title {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
   }
 
   .pin-indicator {
     color: var(--link-button-color);
+    flex-shrink: 0;
   }
-}
-
-.task-item-title {
-  font-size: var(--font-size);
-  font-weight: var(--font-weight-semibold);
-  margin-bottom: var(--spacing);
-  line-height: 1.4;
 }
 
 .task-item-meta {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-half);
+  align-items: center;
+  gap: var(--spacing);
+  margin-left: 24px;
 }
 
+.task-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-third);
+}
+
+.task-label {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: var(--border-radius);
+  font-size: var(--font-size-xs);
+  color: white;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
+}
+
+.task-label-more {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary-color);
+}
+
+.task-assignees {
+  display: flex;
+  gap: -4px;
+}
+
+.task-assignee-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--background-color);
+  margin-left: -4px;
+
+  &:first-child {
+    margin-left: 0;
+  }
+}
+
+.task-comments {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-third);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary-color);
+
+  .octicon {
+    width: 12px;
+    height: 12px;
+  }
+}
+
+.task-project-status {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: var(--border-radius);
+  background: var(--box-alt-background-color);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary-color);
+}
+
+.task-open-external {
+  position: absolute;
+  right: var(--spacing);
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-half);
+  border: none;
+  border-radius: var(--border-radius);
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-secondary-color);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+
+  &:hover {
+    background: var(--box-alt-background-color);
+    color: var(--text-color);
+  }
+}
+
+// Legacy task item styles (for backwards compatibility)
 .project-status {
   padding: var(--spacing-third) var(--spacing-half);
   border-radius: var(--border-radius);

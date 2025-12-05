@@ -190,8 +190,6 @@ export class TaskListPanel extends React.Component<ITaskListPanelProps, ITaskLis
         isActive={activeTask?.id === task.id}
         isDragEnabled={isDragEnabled}
         onClick={() => this.props.onTaskClick(task)}
-        onPin={() => this.props.onTaskPin(task)}
-        onActivate={() => this.props.onTaskActivate(task)}
         onOpenInBrowser={() => this.props.onOpenInBrowser(task)}
         onDrop={this.props.onTaskReorder}
       />

@@ -21,12 +21,6 @@ interface IDraggableTaskItemProps {
   /** Called when the task is clicked */
   readonly onClick: () => void
 
-  /** Called when the pin button is clicked */
-  readonly onPin: () => void
-
-  /** Called when the start/stop button is clicked */
-  readonly onActivate: () => void
-
   /** Called when the user wants to open the task in browser */
   readonly onOpenInBrowser: () => void
 
@@ -72,8 +66,6 @@ export class DraggableTaskItem extends React.Component<
             task={task}
             isActive={isActive}
             onClick={this.props.onClick}
-            onPin={this.props.onPin}
-            onActivate={this.props.onActivate}
             onOpenInBrowser={this.props.onOpenInBrowser}
           />
         </Draggable>
