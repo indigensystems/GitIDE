@@ -8535,7 +8535,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   // === Tasks ===
 
-  /** Refresh tasks from the GitHub API for the given repository */
+  /** Refresh tasks from the GitHub API for the given repository or selected project */
   public async _refreshTasks(
     repository: RepositoryWithGitHubRepository
   ): Promise<void> {
@@ -8544,9 +8544,36 @@ export class AppStore extends TypedBaseStore<IAppState> {
       return
     }
 
+    // Set the current repository for filtering
+    this.tasksStore.setCurrentRepository(repository.gitHubRepository.dbID)
+
+    const taskSource = this.tasksStore.getTaskSource()
+
+    // If task source is project and a project is selected, fetch from project
+    if (taskSource === 'project' && this.selectedProject) {
+      const api = API.fromAccount(account)
+      const projectDetails = await api.fetchProjectDetails(this.selectedProject.id)
+
+      if (projectDetails) {
+        await this.tasksStore.refreshTasksFromProject(projectDetails)
+        this.emitUpdate()
+        return
+      }
+    }
+
+    // Fetch assigned issues for the repository
     const gitHubRepository = repository.gitHubRepository
     await this.tasksStore.refreshTasks(account, gitHubRepository)
     this.emitUpdate()
+  }
+
+  /** Set the task source (repo or project) */
+  public async _setTaskSource(
+    source: 'repo' | 'project',
+    repository: RepositoryWithGitHubRepository
+  ): Promise<void> {
+    this.tasksStore.setTaskSource(source)
+    await this._refreshTasks(repository)
   }
 
   /** Pin or unpin a task */
@@ -8777,6 +8804,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   /** Set the selected owner (user or org) for filtering */
   public async _setSelectedOwner(owner: string | null): Promise<void> {
+    // eslint-disable-next-line no-console
+    console.log(`[_setSelectedOwner] Setting owner to: ${owner}`)
     log.info(`[_setSelectedOwner] Setting owner to: ${owner}`)
     this.selectedOwner = owner
     // Clear project selection when owner changes
@@ -8800,6 +8829,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
     const account = this.accounts.find(
       a => a.endpoint === getDotComAPIEndpoint()
     )
+    // eslint-disable-next-line no-console
+    console.log(`[_setSelectedOwner] Found account: ${account?.login}`)
     log.info(`[_setSelectedOwner] Found account: ${account?.login}`)
     if (account) {
       try {
@@ -8807,6 +8838,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
         if (owner) {
           // Fetch projects for the owner
           this.ownerProjects = await api.fetchOwnerProjects(owner)
+          // eslint-disable-next-line no-console
+          console.log(`[_setSelectedOwner] Fetched ${this.ownerProjects.length} projects`, this.ownerProjects)
           log.info(`[_setSelectedOwner] Fetched ${this.ownerProjects.length} projects`)
           // Fetch repositories for the owner
           if (owner === account.login) {
@@ -8823,6 +8856,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
         }
         log.info(`[_setSelectedOwner] Fetched ${this.ownerRepositories.length} repositories`)
       } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error(`[_setSelectedOwner] Error fetching repos:`, e)
         log.error(`[_setSelectedOwner] Error fetching repos:`, e)
       } finally {
         this.loadingOwnerRepos = false

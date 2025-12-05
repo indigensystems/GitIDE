@@ -60,33 +60,61 @@ export class ProjectView extends React.Component<
     await this.loadProjectDetails()
   }
 
-  public async componentDidUpdate(prevProps: IProjectViewProps) {
-    if (prevProps.project.id !== this.props.project.id) {
-      await this.loadProjectDetails()
-    }
-  }
-
   private getStorageKey(): string {
     return `${ViewOrderStorageKey}-${this.props.project.id}`
   }
 
-  private loadViewOrder(): ReadonlyArray<string> {
+  private loadViewOrder(): ReadonlyArray<string> | null {
     try {
       const stored = localStorage.getItem(this.getStorageKey())
       if (stored) {
         return JSON.parse(stored)
       }
     } catch (e) {
-      console.warn('Failed to load view order from localStorage', e)
+      // Ignore parse errors
     }
-    return []
+    return null
   }
 
   private saveViewOrder(order: ReadonlyArray<string>): void {
     try {
       localStorage.setItem(this.getStorageKey(), JSON.stringify(order))
     } catch (e) {
-      console.warn('Failed to save view order to localStorage', e)
+      // Ignore storage errors
+    }
+  }
+
+  private mergeViewOrder(
+    apiViews: ReadonlyArray<IAPIProjectV2View>,
+    savedOrder: ReadonlyArray<string> | null
+  ): ReadonlyArray<string> {
+    if (!savedOrder) {
+      return apiViews.map(v => v.id)
+    }
+
+    // Start with saved order, but only include views that still exist
+    const apiViewIds = new Set(apiViews.map(v => v.id))
+    const merged: string[] = []
+
+    // Add saved views that still exist in order
+    for (const id of savedOrder) {
+      if (apiViewIds.has(id)) {
+        merged.push(id)
+        apiViewIds.delete(id)
+      }
+    }
+
+    // Add any new views from API that weren't in saved order
+    for (const id of apiViewIds) {
+      merged.push(id)
+    }
+
+    return merged
+  }
+
+  public async componentDidUpdate(prevProps: IProjectViewProps) {
+    if (prevProps.project.id !== this.props.project.id) {
+      await this.loadProjectDetails()
     }
   }
 
@@ -98,14 +126,16 @@ export class ProjectView extends React.Component<
       const details = await api.fetchProjectDetails(this.props.project.id)
 
       if (details) {
+        // Load saved order from localStorage, merge with API views
         const savedOrder = this.loadViewOrder()
         const viewOrder = this.mergeViewOrder(details.views, savedOrder)
-        const orderedViews = this.getOrderedViews(details.views, viewOrder)
-        const firstView = orderedViews.length > 0 ? orderedViews[0] : null
+
+        // Select first view in the merged order
+        const firstViewId = viewOrder.length > 0 ? viewOrder[0] : null
 
         this.setState({
           projectDetails: details,
-          selectedViewId: firstView?.id ?? null,
+          selectedViewId: firstViewId,
           viewOrder,
           isLoading: false,
         })
@@ -121,19 +151,6 @@ export class ProjectView extends React.Component<
         isLoading: false,
       })
     }
-  }
-
-  private mergeViewOrder(
-    views: ReadonlyArray<IAPIProjectV2View>,
-    savedOrder: ReadonlyArray<string>
-  ): ReadonlyArray<string> {
-    const viewIds = new Set(views.map(v => v.id))
-    // Filter out any saved IDs that no longer exist
-    const validSavedOrder = savedOrder.filter(id => viewIds.has(id))
-    // Add any new view IDs that weren't in saved order
-    const savedSet = new Set(validSavedOrder)
-    const newIds = views.filter(v => !savedSet.has(v.id)).map(v => v.id)
-    return [...validSavedOrder, ...newIds]
   }
 
   private getOrderedViews(
@@ -323,7 +340,9 @@ export class ProjectView extends React.Component<
       newOrder.splice(draggedIndex, 1)
       newOrder.splice(targetIndex, 0, draggedViewId)
 
+      // Persist to localStorage
       this.saveViewOrder(newOrder)
+
       this.setState({
         viewOrder: newOrder,
         draggedViewId: null,

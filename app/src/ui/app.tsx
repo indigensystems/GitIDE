@@ -3809,6 +3809,7 @@ export class App extends React.Component<IAppProps, IAppState> {
             !this.state.commitMessageGenerationButtonClicked
           }
           tasksState={state.tasksState}
+          selectedProject={state.selectedProject}
         />
       )
     } else if (selectedState.type === SelectionType.CloningRepository) {

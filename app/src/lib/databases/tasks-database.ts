@@ -85,6 +85,9 @@ export interface ITask {
 
   /** ISO timestamp of when this task was last updated from the API */
   readonly updated_at: string
+
+  /** Source of the task ('repo' for assigned issues, 'project' for project items) */
+  readonly source: 'repo' | 'project'
 }
 
 /** A saved filter for the task list */

@@ -1446,6 +1446,30 @@ export class API {
   }
 
   /**
+   * Fetch all open issues in a repository (not filtered by assignee).
+   * Returns extended issue information including labels and assignees.
+   */
+  public async fetchRepoIssues(
+    owner: string,
+    name: string
+  ): Promise<ReadonlyArray<IAPIIssueWithMetadata>> {
+    const params: { [key: string]: string } = {
+      state: 'open',
+    }
+
+    const url = urlWithQueryString(`repos/${owner}/${name}/issues`, params)
+    try {
+      const issues = await this.fetchAll<IAPIIssueWithMetadata>(url)
+
+      // PRs are issues! But we only want Really Seriously Issues.
+      return issues.filter((i: any) => !i.pull_request)
+    } catch (e) {
+      log.warn(`fetchRepoIssues: failed for repository ${owner}/${name}`, e)
+      throw e
+    }
+  }
+
+  /**
    * Create a new issue in the repository.
    */
   public async createIssue(
@@ -1866,12 +1890,20 @@ export class API {
       })
       if (response !== null) {
         const json = await response.json()
+        // eslint-disable-next-line no-console
+        console.log(`[fetchOwnerProjects] org response for ${owner}:`, json)
+        if (json.errors) {
+          // eslint-disable-next-line no-console
+          console.error(`[fetchOwnerProjects] org errors:`, json.errors)
+        }
         const projects = json.data?.organization?.projectsV2?.nodes
         if (projects) {
           return projects.map(mapProject)
         }
       }
     } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error(`[fetchOwnerProjects] org query failed for ${owner}:`, e)
       log.debug(`fetchOwnerProjects: ${owner} is not an organization`, e)
     }
 
@@ -1882,12 +1914,20 @@ export class API {
       })
       if (response !== null) {
         const json = await response.json()
+        // eslint-disable-next-line no-console
+        console.log(`[fetchOwnerProjects] user response for ${owner}:`, json)
+        if (json.errors) {
+          // eslint-disable-next-line no-console
+          console.error(`[fetchOwnerProjects] user errors:`, json.errors)
+        }
         const projects = json.data?.user?.projectsV2?.nodes
         if (projects) {
           return projects.map(mapProject)
         }
       }
     } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error(`[fetchOwnerProjects] user query failed for ${owner}:`, e)
       log.warn(`fetchOwnerProjects: failed to fetch projects for ${owner}`, e)
     }
 
@@ -1909,11 +1949,14 @@ export class API {
             number
             title
             url
-            views(first: 20) {
+            views(first: 20, orderBy: {field: POSITION, direction: ASC}) {
               nodes {
                 id
+                databaseId
                 name
                 number
+                createdAt
+                updatedAt
                 layout
                 filter
                 fields(first: 30) {
@@ -2267,6 +2310,7 @@ export class API {
             name: g.name,
           })),
         })),
+        // Note: GitHub API returns views in display order - don't sort!
         items: (project.items?.nodes ?? []).map((item: any) => ({
           id: item.id,
           isArchived: item.isArchived,

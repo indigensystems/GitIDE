@@ -42,7 +42,8 @@ import { IAPIIssueWithMetadata } from '../lib/api'
 import { shell } from 'electron'
 import { isRepositoryWithGitHubRepository } from '../models/repository'
 import { ITask } from '../lib/databases/tasks-database'
-import { TaskViewMode, TaskSortOrder } from '../lib/stores/tasks-store'
+import { TaskViewMode, TaskSource } from '../lib/stores/tasks-store'
+import { IAPIProjectV2 } from '../lib/api'
 import { PopupType } from '../models/popup'
 
 interface IRepositoryViewProps {
@@ -56,6 +57,8 @@ interface IRepositoryViewProps {
   readonly issuesStore: IssuesStore
   readonly gitHubUserStore: GitHubUserStore
   readonly tasksState: ITasksState
+  /** The currently selected project (for task source filtering) */
+  readonly selectedProject: IAPIProjectV2 | null
   readonly onViewCommitOnGitHub: (SHA: string, filePath?: string) => void
   readonly imageDiffType: ImageDiffType
   readonly hideWhitespaceInChangesDiff: boolean
@@ -388,7 +391,6 @@ export class RepositoryView extends React.Component<
         tasks={tasksState.tasks}
         activeTask={tasksState.activeTask}
         viewMode={tasksState.viewMode}
-        sortOrder={tasksState.sortOrder}
         isLoading={tasksState.isLoading}
         canCreateTasks={canCreateTasks}
         projectFilter={tasksState.projectFilter}
@@ -401,7 +403,6 @@ export class RepositoryView extends React.Component<
         onTaskPin={this.onTaskPin}
         onTaskActivate={this.onTaskActivate}
         onViewModeChange={this.onTaskViewModeChange}
-        onSortChange={this.onTaskSortChange}
         onRefresh={this.onTasksRefresh}
         onOpenInBrowser={this.onTaskOpenInBrowser}
         onAddTask={this.onAddTask}
@@ -409,6 +410,10 @@ export class RepositoryView extends React.Component<
         onProjectFilterChange={this.onProjectFilterChange}
         onStatusFilterChange={this.onStatusFilterChange}
         onIterationFilterChange={this.onIterationFilterChange}
+        taskSource={tasksState.taskSource}
+        onTaskSourceChange={this.onTaskSourceChange}
+        hasSelectedProject={this.props.selectedProject !== null}
+        selectedProjectName={this.props.selectedProject?.title ?? null}
       />
     )
   }
@@ -586,10 +591,6 @@ export class RepositoryView extends React.Component<
     this.props.dispatcher.setTaskViewMode(mode)
   }
 
-  private onTaskSortChange = (order: TaskSortOrder) => {
-    this.props.dispatcher.setTaskSortOrder(order)
-  }
-
   private onTasksRefresh = () => {
     const { repository } = this.props
     if (isRepositoryWithGitHubRepository(repository)) {
@@ -619,6 +620,12 @@ export class RepositoryView extends React.Component<
 
   private onIterationFilterChange = (iteration: string | null) => {
     this.props.dispatcher.setTaskIterationFilter(iteration)
+  }
+
+  private onTaskSourceChange = (source: TaskSource) => {
+    if (isRepositoryWithGitHubRepository(this.props.repository)) {
+      this.props.dispatcher.setTaskSource(source, this.props.repository)
+    }
   }
 
   private renderSidebarContents(): JSX.Element {

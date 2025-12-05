@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { ITask } from '../../lib/databases/tasks-database'
 import { DraggableTaskItem } from './draggable-task-item'
-import { TaskSortOrder, TaskViewMode } from '../../lib/stores/tasks-store'
+import { TaskViewMode, TaskSource } from '../../lib/stores/tasks-store'
 import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
 import classNames from 'classnames'
@@ -20,9 +20,6 @@ interface ITaskListPanelProps {
 
   /** Current view mode */
   readonly viewMode: TaskViewMode
-
-  /** Current sort order */
-  readonly sortOrder: TaskSortOrder
 
   /** Whether tasks are currently loading from the API */
   readonly isLoading: boolean
@@ -60,9 +57,6 @@ interface ITaskListPanelProps {
   /** Called when view mode changes */
   readonly onViewModeChange: (mode: TaskViewMode) => void
 
-  /** Called when sort order changes */
-  readonly onSortChange: (order: TaskSortOrder) => void
-
   /** Called when the refresh button is clicked */
   readonly onRefresh: () => void
 
@@ -83,6 +77,18 @@ interface ITaskListPanelProps {
 
   /** Called when iteration filter changes */
   readonly onIterationFilterChange: (iteration: string | null) => void
+
+  /** Current task source (repo or project) */
+  readonly taskSource: TaskSource
+
+  /** Called when task source changes */
+  readonly onTaskSourceChange: (source: TaskSource) => void
+
+  /** Whether a project is selected (enables project source option) */
+  readonly hasSelectedProject: boolean
+
+  /** Name of the selected project */
+  readonly selectedProjectName: string | null
 }
 
 /** Threshold width in pixels below which the panel switches to narrow mode */
@@ -121,7 +127,7 @@ export class TaskListPanel extends React.Component<ITaskListPanelProps, ITaskLis
   }
 
   public render() {
-    const { tasks, activeTask, viewMode, sortOrder, isLoading } = this.props
+    const { tasks, activeTask, viewMode, isLoading } = this.props
     const { isNarrow } = this.state
 
     const panelClassName = classNames('task-list-panel', {
@@ -129,11 +135,10 @@ export class TaskListPanel extends React.Component<ITaskListPanelProps, ITaskLis
     })
 
     return (
-      <div ref={this.panelRef} className={panelClassName} data-sort={sortOrder}>
+      <div ref={this.panelRef} className={panelClassName}>
         <header className="task-list-header">
           <h2>My Tasks</h2>
           <div className="task-list-controls">
-            {this.renderSortDropdown()}
             <button
               className="task-refresh-button"
               onClick={this.props.onRefresh}
@@ -179,8 +184,7 @@ export class TaskListPanel extends React.Component<ITaskListPanelProps, ITaskLis
   }
 
   private renderTaskList() {
-    const { tasks, activeTask, sortOrder } = this.props
-    const isDragEnabled = sortOrder === 'custom'
+    const { tasks, activeTask } = this.props
 
     return tasks.map((task, index) => (
       <DraggableTaskItem
@@ -188,7 +192,7 @@ export class TaskListPanel extends React.Component<ITaskListPanelProps, ITaskLis
         task={task}
         index={index}
         isActive={activeTask?.id === task.id}
-        isDragEnabled={isDragEnabled}
+        isDragEnabled={false}
         onClick={() => this.props.onTaskClick(task)}
         onOpenInBrowser={() => this.props.onOpenInBrowser(task)}
         onDrop={this.props.onTaskReorder}
@@ -230,61 +234,33 @@ export class TaskListPanel extends React.Component<ITaskListPanelProps, ITaskLis
     )
   }
 
-  private renderSortDropdown() {
-    const { sortOrder, onSortChange } = this.props
-
-    return (
-      <select
-        value={sortOrder}
-        onChange={e => onSortChange(e.target.value as TaskSortOrder)}
-        className="task-sort-dropdown"
-        title="Sort tasks"
-      >
-        <option value="priority">Priority</option>
-        <option value="updated">Recently Updated</option>
-        <option value="repository">Repository</option>
-        <option value="custom">Custom Order</option>
-      </select>
-    )
-  }
-
   private renderFilters() {
     const {
-      projectFilter,
       statusFilter,
       iterationFilter,
-      availableProjects,
       availableStatuses,
       availableIterations,
-      onProjectFilterChange,
       onStatusFilterChange,
       onIterationFilterChange,
+      taskSource,
+      onTaskSourceChange,
+      hasSelectedProject,
     } = this.props
-
-    // Don't render filters if we have no options
-    if (availableProjects.length === 0 && availableStatuses.length === 0 && availableIterations.length === 0) {
-      return null
-    }
 
     return (
       <div className="task-filters">
-        {availableProjects.length > 0 && (
-          <select
-            value={projectFilter ?? ''}
-            onChange={e =>
-              onProjectFilterChange(e.target.value === '' ? null : e.target.value)
-            }
-            className="task-filter-dropdown"
-            title="Filter by project"
-          >
-            <option value="">All Projects</option>
-            {availableProjects.map(project => (
-              <option key={project} value={project}>
-                {project}
-              </option>
-            ))}
-          </select>
-        )}
+        {/* Task source dropdown - repo or project */}
+        <select
+          value={taskSource}
+          onChange={e => onTaskSourceChange(e.target.value as TaskSource)}
+          className="task-filter-dropdown task-source-dropdown"
+          title="Task source"
+        >
+          <option value="repo">Repo</option>
+          <option value="project" disabled={!hasSelectedProject}>
+            Project
+          </option>
+        </select>
 
         {availableStatuses.length > 0 && (
           <select

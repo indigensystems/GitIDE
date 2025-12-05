@@ -4108,6 +4108,14 @@ export class Dispatcher {
     this.appStore._setTaskIterationFilter(iteration)
   }
 
+  /** Set the task source (repo or project) */
+  public setTaskSource(
+    source: 'repo' | 'project',
+    repository: RepositoryWithGitHubRepository
+  ): Promise<void> {
+    return this.appStore._setTaskSource(source, repository)
+  }
+
   /** Set the selected owner (user or org) for filtering */
   public setSelectedOwner(owner: string | null): Promise<void> {
     return this.appStore._setSelectedOwner(owner)

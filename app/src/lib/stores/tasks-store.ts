@@ -14,6 +14,7 @@ import {
   IAPIMilestone,
   IAPIProjectV2,
   IAPIProjectItem,
+  IAPIProjectV2Details,
 } from '../api'
 import {
   GHDesktopMetadataService,
@@ -26,6 +27,9 @@ export type TaskSortOrder = 'priority' | 'updated' | 'custom' | 'repository' | '
 
 /** Which tasks to show */
 export type TaskViewMode = 'all' | 'repo' | 'active' | 'pinned'
+
+/** Where to fetch tasks from */
+export type TaskSource = 'repo' | 'project'
 
 /** The current state of the tasks store */
 export interface ITasksState {
@@ -99,6 +103,12 @@ export interface ITasksState {
 
   /** Filter for issue state */
   readonly issueStateFilter: 'open' | 'closed' | 'all'
+
+  /** Where to fetch tasks from (repo assigned issues or project items) */
+  readonly taskSource: TaskSource
+
+  /** Current repository ID for filtering repo tasks */
+  readonly currentRepositoryId: number | null
 }
 
 export { ITaskList, ITimeEntry }
@@ -137,6 +147,8 @@ export class TasksStore {
     issues: [],
     isLoadingIssues: false,
     issueStateFilter: 'open',
+    taskSource: 'project', // Default to project items when a project is selected
+    currentRepositoryId: null,
   }
 
   public constructor(db: TasksDatabase) {
@@ -165,7 +177,7 @@ export class TasksStore {
   }
 
   /**
-   * Refresh tasks from GitHub API for issues assigned to the user.
+   * Refresh tasks from GitHub API for all open issues in the repository.
    * If a repository is provided, only fetches tasks for that repo.
    */
   public async refreshTasks(
@@ -181,11 +193,10 @@ export class TasksStore {
       let apiIssues: ReadonlyArray<IAPIIssueWithMetadata> = []
 
       if (repository) {
-        // Fetch issues for specific repo assigned to user
-        apiIssues = await api.fetchAssignedIssues(
+        // Fetch all open issues for specific repo
+        apiIssues = await api.fetchRepoIssues(
           repository.owner.login,
-          repository.name,
-          account.login
+          repository.name
         )
         await this.syncTasks(api, apiIssues, repository)
       }
@@ -201,6 +212,138 @@ export class TasksStore {
       this.emitUpdate()
       throw error
     }
+  }
+
+  /**
+   * Refresh tasks from a GitHub Project's items.
+   * This converts project items to tasks and stores them in the database.
+   */
+  public async refreshTasksFromProject(
+    projectDetails: IAPIProjectV2Details
+  ): Promise<void> {
+    this.state = { ...this.state, isLoading: true }
+    this.emitUpdate()
+
+    try {
+      await this.syncProjectItems(projectDetails)
+
+      this.state = {
+        ...this.state,
+        isLoading: false,
+        lastRefresh: new Date(),
+      }
+      await this.loadTasks()
+    } catch (error) {
+      this.state = { ...this.state, isLoading: false }
+      this.emitUpdate()
+      throw error
+    }
+  }
+
+  /**
+   * Sync project items with local database as tasks.
+   */
+  private async syncProjectItems(
+    projectDetails: IAPIProjectV2Details
+  ): Promise<void> {
+    const items = projectDetails.items.filter(
+      item => !item.isArchived && item.content?.type === 'Issue'
+    )
+
+    // eslint-disable-next-line no-console
+    console.log(`[syncProjectItems] Syncing ${items.length} items from project "${projectDetails.title}"`)
+
+    await this.db.transaction('rw', this.db.tasks, async () => {
+      const processedIssueIds = new Set<string>()
+
+      for (const item of items) {
+        const content = item.content
+        if (!content || !content.repository) {
+          continue
+        }
+
+        // Create a unique issueId using project + content id
+        const issueId = `project-${projectDetails.id}-${content.id}`
+        processedIssueIds.add(issueId)
+
+        const existing = await this.db.getTaskByIssueId(issueId)
+
+        const labels: ITaskLabel[] = (content.labels ?? []).map(label => ({
+          name: label.name,
+          color: label.color,
+        }))
+
+        // Extract project status and iteration from field values
+        let projectStatus: string | null = null
+        let projectIteration: string | null = null
+        let projectIterationStartDate: string | null = null
+
+        for (const fieldValue of item.fieldValues) {
+          if (fieldValue.field?.name === 'Status' && fieldValue.type === 'singleSelect') {
+            projectStatus = fieldValue.name ?? null
+          }
+          if (fieldValue.type === 'iteration') {
+            projectIteration = fieldValue.title ?? null
+            projectIterationStartDate = fieldValue.startDate ?? null
+          }
+        }
+
+        const repoName = `${content.repository.owner.login}/${content.repository.name}`
+
+        const taskData: Partial<ITask> = {
+          issueId,
+          issueNumber: content.number ?? 0,
+          title: content.title,
+          body: null, // Project items don't include body
+          authorLogin: null,
+          authorAvatarUrl: content.assignees?.[0]?.avatarUrl ?? null,
+          createdAt: null,
+          commentCount: 0,
+          repositoryId: 0, // No repo ID for project items
+          repositoryName: repoName,
+          url: content.url ?? '',
+          state: content.state === 'CLOSED' ? 'CLOSED' : 'OPEN',
+          labels,
+          projectStatus,
+          projectTitle: projectDetails.title,
+          projectIteration,
+          projectIterationStartDate,
+          updated_at: new Date().toISOString(),
+          source: 'project',
+        }
+
+        if (existing) {
+          // Preserve local-only fields when updating
+          await this.db.tasks.update(existing.id!, taskData)
+        } else {
+          // New task with default local fields
+          await this.db.tasks.add({
+            ...taskData,
+            body: null,
+            authorLogin: null,
+            authorAvatarUrl: taskData.authorAvatarUrl ?? null,
+            createdAt: null,
+            commentCount: 0,
+            isPinned: false,
+            localOrder: 0,
+            isActive: false,
+            notes: null,
+            timeSpent: 0,
+            lastWorkedOn: null,
+          } as ITask)
+        }
+      }
+
+      // Remove tasks from this project that are no longer in the project
+      const allTasks = await this.db.getAllTasks()
+      const projectPrefix = `project-${projectDetails.id}-`
+
+      for (const task of allTasks) {
+        if (task.issueId.startsWith(projectPrefix) && !processedIssueIds.has(task.issueId)) {
+          await this.db.tasks.delete(task.id!)
+        }
+      }
+    })
   }
 
   /**
@@ -284,6 +427,7 @@ export class TasksStore {
           projectIteration,
           projectIterationStartDate,
           updated_at: new Date().toISOString(),
+          source: 'repo',
         }
 
         if (existing) {
@@ -340,6 +484,16 @@ export class TasksStore {
 
     // Filter to only open tasks
     tasks = tasks.filter(t => t.state === 'OPEN')
+
+    // Filter by task source (repo or project)
+    // Tasks without a source field default to 'repo' for backwards compatibility
+    const { taskSource, currentRepositoryId } = this.state
+    tasks = tasks.filter(t => (t.source ?? 'repo') === taskSource)
+
+    // When in 'repo' mode, also filter by the current repository
+    if (taskSource === 'repo' && currentRepositoryId !== null) {
+      tasks = tasks.filter(t => t.repositoryId === currentRepositoryId)
+    }
 
     // Compute available projects, statuses, and iterations from all tasks (before filtering)
     const projectSet = new Set<string>()
@@ -858,6 +1012,28 @@ export class TasksStore {
   public setIssueStateFilter(state: 'open' | 'closed' | 'all'): void {
     this.state = { ...this.state, issueStateFilter: state }
     this.emitUpdate()
+  }
+
+  /**
+   * Set the task source (repo assigned issues or project items).
+   */
+  public setTaskSource(source: TaskSource): void {
+    this.state = { ...this.state, taskSource: source }
+    this.emitUpdate()
+  }
+
+  /**
+   * Set the current repository ID for filtering repo tasks.
+   */
+  public setCurrentRepository(repositoryId: number | null): void {
+    this.state = { ...this.state, currentRepositoryId: repositoryId }
+  }
+
+  /**
+   * Get the current task source.
+   */
+  public getTaskSource(): TaskSource {
+    return this.state.taskSource
   }
 
   /**
