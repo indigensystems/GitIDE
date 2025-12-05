@@ -5,6 +5,7 @@ import {
 } from '../../lib/api'
 import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
+import classNames from 'classnames'
 
 interface IBoardLayoutProps {
   readonly items: ReadonlyArray<IAPIProjectV2ItemWithContent>
@@ -12,6 +13,16 @@ interface IBoardLayoutProps {
   readonly statusField: IAPIProjectField | undefined
   readonly groupByField?: { id: string; name: string }
   readonly onCardClick?: (item: IAPIProjectV2ItemWithContent) => void
+  readonly onStatusChange?: (
+    item: IAPIProjectV2ItemWithContent,
+    newStatusOptionId: string,
+    newStatusName: string
+  ) => void
+}
+
+interface IBoardLayoutState {
+  readonly draggedItemId: string | null
+  readonly dragOverColumnId: string | null
 }
 
 interface IColumn {
@@ -21,7 +32,14 @@ interface IColumn {
   readonly items: ReadonlyArray<IAPIProjectV2ItemWithContent>
 }
 
-export class BoardLayout extends React.Component<IBoardLayoutProps> {
+export class BoardLayout extends React.Component<IBoardLayoutProps, IBoardLayoutState> {
+  public constructor(props: IBoardLayoutProps) {
+    super(props)
+    this.state = {
+      draggedItemId: null,
+      dragOverColumnId: null,
+    }
+  }
   private getColumns(): ReadonlyArray<IColumn> {
     const { items, statusField } = this.props
 
@@ -115,6 +133,62 @@ export class BoardLayout extends React.Component<IBoardLayoutProps> {
     this.props.onCardClick?.(item)
   }
 
+  private onDragStart = (e: React.DragEvent<HTMLDivElement>, item: IAPIProjectV2ItemWithContent) => {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', item.id)
+    this.setState({ draggedItemId: item.id })
+  }
+
+  private onDragEnd = () => {
+    this.setState({ draggedItemId: null, dragOverColumnId: null })
+  }
+
+  private onColumnDragOver = (e: React.DragEvent<HTMLDivElement>, columnId: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (this.state.dragOverColumnId !== columnId) {
+      this.setState({ dragOverColumnId: columnId })
+    }
+  }
+
+  private onColumnDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    const relatedTarget = e.relatedTarget as HTMLElement
+    if (!e.currentTarget.contains(relatedTarget)) {
+      this.setState({ dragOverColumnId: null })
+    }
+  }
+
+  private onColumnDrop = (e: React.DragEvent<HTMLDivElement>, column: IColumn) => {
+    e.preventDefault()
+    const { draggedItemId } = this.state
+    const { items, onStatusChange } = this.props
+
+    if (!draggedItemId || !onStatusChange) {
+      this.setState({ draggedItemId: null, dragOverColumnId: null })
+      return
+    }
+
+    // Find the dragged item
+    const draggedItem = items.find(item => item.id === draggedItemId)
+    if (!draggedItem) {
+      this.setState({ draggedItemId: null, dragOverColumnId: null })
+      return
+    }
+
+    // Get the current status of the dragged item
+    const currentStatus = draggedItem.fieldValues.find(
+      fv => fv.field.name === 'Status' && fv.type === 'singleSelect'
+    )
+    const currentStatusId = currentStatus?.type === 'singleSelect' ? currentStatus.optionId : null
+
+    // Only trigger change if moving to a different column
+    if (currentStatusId !== column.id && column.id !== 'no-status') {
+      onStatusChange(draggedItem, column.id, column.name)
+    }
+
+    this.setState({ draggedItemId: null, dragOverColumnId: null })
+  }
+
   private renderCard(item: IAPIProjectV2ItemWithContent) {
     const content = item.content
     if (!content) {
@@ -125,10 +199,16 @@ export class BoardLayout extends React.Component<IBoardLayoutProps> {
       ? `${content.repository.owner.login}/${content.repository.name}`
       : null
 
+    const isDragging = this.state.draggedItemId === item.id
+    const cardClassName = classNames('board-card', { dragging: isDragging })
+
     return (
       <div
         key={item.id}
-        className="board-card"
+        className={cardClassName}
+        draggable={true}
+        onDragStart={e => this.onDragStart(e, item)}
+        onDragEnd={this.onDragEnd}
         onClick={() => this.onCardClick(item)}
       >
         <div className="card-header">
@@ -191,9 +271,19 @@ export class BoardLayout extends React.Component<IBoardLayoutProps> {
 
   private renderColumn(column: IColumn) {
     const colorClass = this.getColumnColorClass(column.color)
+    const isDragOver = this.state.dragOverColumnId === column.id
+    const columnClassName = classNames('board-column', colorClass, {
+      'drag-over': isDragOver,
+    })
 
     return (
-      <div key={column.id} className={`board-column ${colorClass}`}>
+      <div
+        key={column.id}
+        className={columnClassName}
+        onDragOver={e => this.onColumnDragOver(e, column.id)}
+        onDragLeave={this.onColumnDragLeave}
+        onDrop={e => this.onColumnDrop(e, column)}
+      >
         <div className="column-header">
           <span className={`column-indicator ${colorClass}`} />
           <span className="column-name">{column.name}</span>

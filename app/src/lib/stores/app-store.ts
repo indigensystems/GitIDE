@@ -83,6 +83,7 @@ import {
   getPersistedThemeName,
   setPersistedTheme,
 } from '../../ui/lib/application-theme'
+import { findCurrentIterationTitle } from '../../ui/project-view/filter-utils'
 import {
   getAppMenu,
   getCurrentWindowState,
@@ -416,6 +417,7 @@ const imageDiffTypeDefault = ImageDiffType.TwoUp
 const imageDiffTypeKey = 'image-diff-type'
 
 const selectedOwnerKey = 'selected-owner'
+const selectedProjectIdKey = 'selected-project-id'
 
 const hideWhitespaceInChangesDiffDefault = false
 const hideWhitespaceInChangesDiffKey = 'hide-whitespace-in-changes-diff'
@@ -8556,6 +8558,13 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
       if (projectDetails) {
         await this.tasksStore.refreshTasksFromProject(projectDetails)
+
+        // Set default iteration filter to current iteration if not already set
+        const currentIteration = findCurrentIterationTitle(projectDetails.fields)
+        if (currentIteration && this.tasksStore.getState().iterationFilter === null) {
+          await this.tasksStore.setIterationFilter(currentIteration)
+        }
+
         this.emitUpdate()
         return
       }
@@ -8808,7 +8817,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
     console.log(`[_setSelectedOwner] Setting owner to: ${owner}`)
     log.info(`[_setSelectedOwner] Setting owner to: ${owner}`)
     this.selectedOwner = owner
-    // Clear project selection when owner changes
+    // Clear project selection when owner changes (will restore from localStorage after fetching)
     this.selectedProject = null
     this.ownerProjects = []
     this.ownerRepositories = []
@@ -8841,6 +8850,27 @@ export class AppStore extends TypedBaseStore<IAppState> {
           // eslint-disable-next-line no-console
           console.log(`[_setSelectedOwner] Fetched ${this.ownerProjects.length} projects`, this.ownerProjects)
           log.info(`[_setSelectedOwner] Fetched ${this.ownerProjects.length} projects`)
+
+          // Restore saved project selection if it exists in the fetched projects
+          const savedProjectId = localStorage.getItem(selectedProjectIdKey)
+          if (savedProjectId && this.ownerProjects.length > 0) {
+            const savedProject = this.ownerProjects.find(p => p.id === savedProjectId)
+            if (savedProject) {
+              log.info(`[_setSelectedOwner] Restoring saved project: ${savedProject.title}`)
+              await this._setSelectedProject(savedProject)
+
+              // Fetch project details to set default iteration filter
+              const projectDetails = await api.fetchProjectDetails(savedProject.id)
+              if (projectDetails) {
+                const currentIteration = findCurrentIterationTitle(projectDetails.fields)
+                if (currentIteration) {
+                  log.info(`[_setSelectedOwner] Setting default iteration to: ${currentIteration}`)
+                  await this.tasksStore.setIterationFilter(currentIteration)
+                }
+              }
+            }
+          }
+
           // Fetch repositories for the owner
           if (owner === account.login) {
             log.info(`[_setSelectedOwner] Fetching user repos for ${owner}`)
@@ -8877,6 +8907,13 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.selectedProject = project
     // TODO: Fetch project items and build projectRepoNames when we add repo highlighting
     this.projectRepoNames = new Set()
+
+    // Persist the selected project ID
+    if (project) {
+      localStorage.setItem(selectedProjectIdKey, project.id)
+    } else {
+      localStorage.removeItem(selectedProjectIdKey)
+    }
 
     // Sync the project filter to the tasks store
     await this.tasksStore.setProjectFilter(project?.title ?? null)

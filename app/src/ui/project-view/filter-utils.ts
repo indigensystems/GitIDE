@@ -15,7 +15,7 @@ interface FilterOptions {
  * Find the current iteration from the project's iteration field.
  * Returns the title of the current iteration, or null if not found.
  */
-function findCurrentIterationTitle(fields: ReadonlyArray<IAPIProjectField>): string | null {
+export function findCurrentIterationTitle(fields: ReadonlyArray<IAPIProjectField>): string | null {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 

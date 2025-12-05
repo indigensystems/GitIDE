@@ -217,6 +217,90 @@ export class ProjectView extends React.Component<
     }
   }
 
+  private onStatusChange = async (
+    item: IAPIProjectV2ItemWithContent,
+    newStatusOptionId: string,
+    newStatusName: string
+  ) => {
+    const { projectDetails } = this.state
+    const { project, account } = this.props
+
+    if (!projectDetails) {
+      return
+    }
+
+    // Find the status field
+    const statusField = projectDetails.fields.find(f => f.name === 'Status')
+    if (!statusField) {
+      console.error('[onStatusChange] Status field not found')
+      return
+    }
+
+    // Optimistic update - update the local state immediately
+    const updatedItems = projectDetails.items.map(i => {
+      if (i.id !== item.id) {
+        return i
+      }
+
+      // Update the status field value in the item
+      const updatedFieldValues = i.fieldValues.map(fv => {
+        if (fv.field.name === 'Status' && fv.type === 'singleSelect') {
+          return {
+            ...fv,
+            optionId: newStatusOptionId,
+            name: newStatusName,
+          }
+        }
+        return fv
+      })
+
+      // If no existing status field, add one
+      const hasStatus = updatedFieldValues.some(fv => fv.field.name === 'Status')
+      if (!hasStatus) {
+        updatedFieldValues.push({
+          type: 'singleSelect' as const,
+          field: { name: 'Status' },
+          optionId: newStatusOptionId,
+          name: newStatusName,
+        })
+      }
+
+      return {
+        ...i,
+        fieldValues: updatedFieldValues,
+      }
+    })
+
+    this.setState({
+      projectDetails: {
+        ...projectDetails,
+        items: updatedItems,
+      },
+    })
+
+    // Call the API to update the status
+    try {
+      const api = API.fromAccount(account)
+      const success = await api.updateProjectItemField(
+        project.id,
+        item.id,
+        statusField.id,
+        'SINGLE_SELECT',
+        newStatusOptionId
+      )
+
+      if (!success) {
+        console.error('[onStatusChange] Failed to update status')
+        // Revert optimistic update on failure
+        this.setState({ projectDetails })
+      }
+    } catch (e) {
+      console.error('[onStatusChange] Error updating status:', e)
+      // Revert optimistic update on error
+      this.setState({ projectDetails })
+    }
+  }
+
   private onCloseModal = () => {
     this.setState({ selectedItem: null })
   }
@@ -459,6 +543,7 @@ export class ProjectView extends React.Component<
             statusField={statusField}
             groupByField={selectedView.groupBy?.[0]}
             onCardClick={this.onCardClick}
+            onStatusChange={this.onStatusChange}
           />
         )
       case 'TABLE_LAYOUT':

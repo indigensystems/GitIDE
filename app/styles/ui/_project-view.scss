@@ -240,6 +240,16 @@
     color: var(--text-secondary-color);
     font-size: var(--font-size-sm);
   }
+
+  // Drag-over state for columns
+  &.drag-over {
+    background: var(--box-selected-active-background-color);
+    border: 2px dashed var(--focus-color);
+
+    .column-content {
+      min-height: 100px;
+    }
+  }
 }
 
 .board-card {
@@ -247,10 +257,22 @@
   border: 1px solid var(--box-border-color);
   border-radius: var(--border-radius);
   padding: var(--spacing);
-  cursor: pointer;
+  cursor: grab;
+  transition: transform 0.1s ease, box-shadow 0.1s ease, opacity 0.1s ease;
 
   &:hover {
     border-color: var(--text-secondary-color);
+  }
+
+  &:active {
+    cursor: grabbing;
+  }
+
+  // Dragging state
+  &.dragging {
+    opacity: 0.5;
+    transform: scale(0.98);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   }
 
   .card-header {
