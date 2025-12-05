@@ -30,6 +30,8 @@ export interface IProjectInfo {
   readonly projectId: string
   /** The project title */
   readonly projectTitle: string
+  /** Whether the project item is archived */
+  readonly isArchived: boolean
   /** The status field ID */
   readonly statusFieldId: string
   /** Current status option ID */
@@ -238,6 +240,7 @@ export class IssueDetailView extends React.Component<
                   itemId: projectItem.id,
                   projectId: project.id,
                   projectTitle: project.title,
+                  isArchived: projectItem.isArchived,
                   statusFieldId: statusField.id,
                   currentStatusOptionId: statusFieldValue?.type === 'singleSelect' ? statusFieldValue.optionId : null,
                   currentStatusName: statusFieldValue?.type === 'singleSelect' ? statusFieldValue.name : null,
@@ -544,6 +547,12 @@ export class IssueDetailView extends React.Component<
                 <div className="project-name-row">
                   <Octicon symbol={octicons.project} />
                   <span className="project-title">{currentIssue.projectTitle || issueDetails?.projectInfo?.projectTitle}</span>
+                  {issueDetails?.projectInfo?.isArchived && (
+                    <span className="archived-badge" title="This item is archived in the project">
+                      <Octicon symbol={octicons.archive} />
+                      Archived
+                    </span>
+                  )}
                 </div>
                 {this.renderProjectFields()}
               </div>

@@ -425,6 +425,7 @@ export type IAPIProjectFieldValue =
 /** Item in a GitHub Project V2 (links issue to project) */
 export interface IAPIProjectItem {
   readonly id: string
+  readonly isArchived: boolean
   readonly project: {
     readonly id: string
     readonly title: string
@@ -1683,6 +1684,7 @@ export class API {
             projectItems(first: 10) {
               nodes {
                 id
+                isArchived
                 project {
                   id
                   title
@@ -1762,6 +1764,7 @@ export class API {
 
       const result = items.map((item: any) => ({
         id: item.id,
+        isArchived: item.isArchived ?? false,
         project: item.project,
         fieldValues: (item.fieldValues?.nodes ?? [])
           .filter((v: any) => v.field && v.__typename)
@@ -1871,6 +1874,8 @@ export class API {
     `
 
     const fieldValue = API.buildProjectFieldValue(fieldType, value)
+    // eslint-disable-next-line no-console
+    console.log(`[updateProjectItemField] params:`, { projectId, itemId, fieldId, fieldType, value, fieldValue })
 
     try {
       const response = await this.ghRequest('POST', '/graphql', {
@@ -1891,9 +1896,105 @@ export class API {
       const json = await response.json()
       // eslint-disable-next-line no-console
       console.log(`[updateProjectItemField] response:`, json)
+
+      // Check if item is archived and needs to be unarchived first
+      if (json.errors && json.errors.length > 0) {
+        const isArchived = json.errors.some(
+          (error: { message: string }) =>
+            error.message?.includes('archived') ||
+            error.message?.includes('The item is archived')
+        )
+
+        if (isArchived) {
+          // eslint-disable-next-line no-console
+          console.log(`[updateProjectItemField] Item is archived, attempting to unarchive...`)
+          const unarchived = await this.unarchiveProjectItem(projectId, itemId)
+          if (unarchived) {
+            // eslint-disable-next-line no-console
+            console.log(`[updateProjectItemField] Unarchived successfully, retrying update...`)
+            // Retry the update after unarchiving
+            const retryResponse = await this.ghRequest('POST', '/graphql', {
+              body: {
+                query: mutation,
+                variables: {
+                  projectId,
+                  itemId,
+                  fieldId,
+                  value: fieldValue,
+                },
+              },
+            })
+            if (retryResponse !== null) {
+              const retryJson = await retryResponse.json()
+              // eslint-disable-next-line no-console
+              console.log(`[updateProjectItemField] retry response:`, retryJson)
+              return retryJson.data?.updateProjectV2ItemFieldValue?.projectV2Item?.id != null
+            }
+          } else {
+            // eslint-disable-next-line no-console
+            console.error(`[updateProjectItemField] Failed to unarchive item`)
+          }
+        }
+
+        // Log errors for other cases
+        for (const error of json.errors) {
+          // eslint-disable-next-line no-console
+          console.error(`[updateProjectItemField] GraphQL error:`, error.message)
+          // eslint-disable-next-line no-console
+          console.error(`[updateProjectItemField] Error details:`, JSON.stringify(error, null, 2))
+        }
+      }
+
       return json.data?.updateProjectV2ItemFieldValue?.projectV2Item?.id != null
     } catch (e) {
       log.warn('updateProjectItemField: failed', e)
+      return false
+    }
+  }
+
+  /**
+   * Unarchive a project item so it can be updated.
+   */
+  public async unarchiveProjectItem(
+    projectId: string,
+    itemId: string
+  ): Promise<boolean> {
+    const mutation = `
+      mutation($projectId: ID!, $itemId: ID!) {
+        unarchiveProjectV2Item(input: { projectId: $projectId, itemId: $itemId }) {
+          item {
+            id
+          }
+        }
+      }
+    `
+
+    try {
+      const response = await this.ghRequest('POST', '/graphql', {
+        body: {
+          query: mutation,
+          variables: { projectId, itemId },
+        },
+      })
+      if (response === null) {
+        return false
+      }
+
+      const json = await response.json()
+      // eslint-disable-next-line no-console
+      console.log(`[unarchiveProjectItem] response:`, json)
+
+      if (json.errors && json.errors.length > 0) {
+        for (const error of json.errors) {
+          // eslint-disable-next-line no-console
+          console.error(`[unarchiveProjectItem] GraphQL error:`, error.message)
+        }
+        return false
+      }
+
+      return json.data?.unarchiveProjectV2Item?.item?.id != null
+    } catch (e) {
+      log.warn('unarchiveProjectItem: failed', e)
       return false
     }
   }
