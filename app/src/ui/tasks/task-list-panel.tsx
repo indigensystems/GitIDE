@@ -42,6 +42,12 @@ interface ITaskListPanelProps {
   /** Available statuses to filter by */
   readonly availableStatuses: ReadonlyArray<string>
 
+  /** Current iteration filter (null = all iterations) */
+  readonly iterationFilter: string | null
+
+  /** Available iterations to filter by */
+  readonly availableIterations: ReadonlyArray<string>
+
   /** Called when a task is clicked */
   readonly onTaskClick: (task: ITask) => void
 
@@ -74,6 +80,9 @@ interface ITaskListPanelProps {
 
   /** Called when status filter changes */
   readonly onStatusFilterChange: (status: string | null) => void
+
+  /** Called when iteration filter changes */
+  readonly onIterationFilterChange: (iteration: string | null) => void
 }
 
 /** Threshold width in pixels below which the panel switches to narrow mode */
@@ -245,59 +254,74 @@ export class TaskListPanel extends React.Component<ITaskListPanelProps, ITaskLis
     const {
       projectFilter,
       statusFilter,
+      iterationFilter,
       availableProjects,
       availableStatuses,
+      availableIterations,
       onProjectFilterChange,
       onStatusFilterChange,
+      onIterationFilterChange,
     } = this.props
 
     // Don't render filters if we have no options
-    if (availableProjects.length === 0 && availableStatuses.length === 0) {
+    if (availableProjects.length === 0 && availableStatuses.length === 0 && availableIterations.length === 0) {
       return null
     }
 
     return (
       <div className="task-filters">
         {availableProjects.length > 0 && (
-          <div className="task-filter">
-            <label htmlFor="project-filter">Project:</label>
-            <select
-              id="project-filter"
-              value={projectFilter ?? ''}
-              onChange={e =>
-                onProjectFilterChange(e.target.value === '' ? null : e.target.value)
-              }
-              className="task-filter-dropdown"
-            >
-              <option value="">All Projects</option>
-              {availableProjects.map(project => (
-                <option key={project} value={project}>
-                  {project}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            value={projectFilter ?? ''}
+            onChange={e =>
+              onProjectFilterChange(e.target.value === '' ? null : e.target.value)
+            }
+            className="task-filter-dropdown"
+            title="Filter by project"
+          >
+            <option value="">All Projects</option>
+            {availableProjects.map(project => (
+              <option key={project} value={project}>
+                {project}
+              </option>
+            ))}
+          </select>
         )}
 
         {availableStatuses.length > 0 && (
-          <div className="task-filter">
-            <label htmlFor="status-filter">Status:</label>
-            <select
-              id="status-filter"
-              value={statusFilter ?? ''}
-              onChange={e =>
-                onStatusFilterChange(e.target.value === '' ? null : e.target.value)
-              }
-              className="task-filter-dropdown"
-            >
-              <option value="">All Statuses</option>
-              {availableStatuses.map(status => (
-                <option key={status} value={status}>
-                  {status}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            value={statusFilter ?? ''}
+            onChange={e =>
+              onStatusFilterChange(e.target.value === '' ? null : e.target.value)
+            }
+            className="task-filter-dropdown"
+            title="Filter by status"
+          >
+            <option value="">All Statuses</option>
+            {availableStatuses.map(status => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {availableIterations.length > 0 && (
+          <select
+            value={iterationFilter ?? ''}
+            onChange={e =>
+              onIterationFilterChange(e.target.value === '' ? null : e.target.value)
+            }
+            className="task-filter-dropdown"
+            title="Filter by iteration"
+          >
+            <option value="">All Iterations</option>
+            {availableIterations.map(iteration => (
+              <option key={iteration} value={iteration}>
+                {iteration}
+              </option>
+            ))}
+          </select>
         )}
       </div>
     )

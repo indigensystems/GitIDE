@@ -4,6 +4,7 @@ import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
 import classNames from 'classnames'
 import {
+  API,
   IAPIIdentity,
   IAPILabel,
   IAPIMilestone,
@@ -11,6 +12,7 @@ import {
   IAPIProjectFieldValue,
   IAPIIssueTimelineEvent,
 } from '../../lib/api'
+import { Account } from '../../models/account'
 
 /** Comment from GitHub API */
 export interface IIssueComment {
@@ -18,58 +20,6 @@ export interface IIssueComment {
   readonly body: string
   readonly user: IAPIIdentity
   readonly createdAt: string
-}
-
-/** Timeline event types we support displaying */
-export type TimelineEventType =
-  | 'commented'
-  | 'labeled'
-  | 'unlabeled'
-  | 'assigned'
-  | 'unassigned'
-  | 'milestoned'
-  | 'demilestoned'
-  | 'renamed'
-  | 'closed'
-  | 'reopened'
-  | 'cross-referenced'
-  | 'added_to_project'
-  | 'moved_columns_in_project'
-  | 'review_requested'
-  | 'referenced'
-  | 'connected'
-  | 'disconnected'
-
-/** Unified timeline event for display */
-export interface ITimelineEvent {
-  readonly id: string
-  readonly type: TimelineEventType | string
-  readonly createdAt: string
-  readonly actor?: IAPIIdentity | null
-  // For comments
-  readonly body?: string
-  readonly user?: IAPIIdentity
-  // For labeled events
-  readonly label?: { name: string; color: string }
-  // For assigned events
-  readonly assignee?: IAPIIdentity
-  // For milestone events
-  readonly milestone?: { title: string }
-  // For renamed events
-  readonly rename?: { from: string; to: string }
-  // For project events
-  readonly projectCard?: {
-    columnName: string
-    previousColumnName?: string
-  }
-  // For cross-reference
-  readonly source?: {
-    issue?: {
-      number: number
-      title: string
-      repository?: string
-    }
-  }
 }
 
 /** Project info for the issue detail panel */
@@ -106,83 +56,109 @@ export interface IIssueDetails {
   readonly projectInfo: IProjectInfo | null
 }
 
-interface ITaskDetailPanelProps {
-  /** The task to display details for */
-  readonly task: ITask
+/** Minimal issue info needed to display the view */
+export interface IIssueInfo {
+  /** GitHub node ID for the issue (required for GraphQL operations) */
+  readonly issueId: string
+  /** Issue number */
+  readonly issueNumber: number
+  /** Issue title */
+  readonly title: string
+  /** Issue body/description (markdown) */
+  readonly body: string | null
+  /** Author login name */
+  readonly authorLogin: string | null
+  /** Author avatar URL */
+  readonly authorAvatarUrl: string | null
+  /** ISO timestamp of when the issue was created */
+  readonly createdAt: string | null
+  /** Repository in owner/repo format */
+  readonly repositoryName: string
+  /** URL to the issue on GitHub */
+  readonly url: string
+  /** Issue state */
+  readonly state: 'OPEN' | 'CLOSED'
+  /** Labels attached to the issue */
+  readonly labels: ReadonlyArray<{ name: string; color: string }>
+  /** Status from linked project (if any) - pre-populated for tasks */
+  readonly projectStatus: string | null
+  /** Title of the linked project (if any) - pre-populated for tasks */
+  readonly projectTitle: string | null
+}
 
-  /** Whether this is the currently active task */
-  readonly isActive: boolean
+interface IIssueDetailViewProps {
+  /** Repository owner (e.g., 'octocat') */
+  readonly owner: string
 
-  /** Full issue details (loaded async) */
-  readonly issueDetails: IIssueDetails | null
+  /** Repository name (e.g., 'Hello-World') */
+  readonly repo: string
 
-  /** Whether issue details are being loaded */
-  readonly isLoadingDetails: boolean
+  /** The issue info to display */
+  readonly issue: IIssueInfo
+
+  /** The account to use for API calls */
+  readonly account: Account
+
+  /** Available GitHub Projects V2 for this repository */
+  readonly projects: ReadonlyArray<IAPIProjectV2>
 
   /** Called when the back button is clicked */
   readonly onBack: () => void
 
-  /** Called when the pin button is clicked */
-  readonly onPin: () => void
-
-  /** Called when the start/stop button is clicked */
-  readonly onActivate: () => void
-
-  /** Called when the user wants to open the task in browser */
+  /** Called when the user wants to open the issue in browser */
   readonly onOpenInBrowser: () => void
 
-  /** Called when the user submits a new comment */
-  readonly onAddComment: (body: string) => void
+  /** Optional: Task-specific features */
+  readonly taskFeatures?: {
+    /** The full task object (for pin/active features) */
+    readonly task: ITask
+    /** Whether this is the currently active task */
+    readonly isActive: boolean
+    /** Called when the pin button is clicked */
+    readonly onPin: () => void
+    /** Called when the start/stop button is clicked */
+    readonly onActivate: () => void
+  }
 
-  /** Called when assignees are changed */
-  readonly onUpdateAssignees: (assignees: ReadonlyArray<string>) => void
-
-  /** Called when labels are changed */
-  readonly onUpdateLabels: (labels: ReadonlyArray<string>) => void
-
-  /** Called when milestone is changed */
-  readonly onUpdateMilestone: (milestoneNumber: number | null) => void
-
-  /** Called when issue state is changed */
-  readonly onUpdateState: (state: 'open' | 'closed') => void
-
-  /** Available GitHub Projects V2 */
-  readonly projects: ReadonlyArray<IAPIProjectV2>
-
-  /** Called when any project field is changed */
-  readonly onUpdateProjectField: (
-    projectId: string,
-    itemId: string,
-    fieldId: string,
-    fieldType: string,
-    value: string | number
-  ) => void
-
-  /** Called when issue is added to a project with a status */
-  readonly onAddToProject: (
-    projectId: string,
-    statusFieldId: string,
-    statusOptionId: string
-  ) => void
+  /** Optional: Called when the issue state is updated (for parent to refresh) */
+  readonly onIssueUpdated?: () => void
 }
 
-interface ITaskDetailPanelState {
+interface IIssueDetailViewState {
+  /** Loaded issue details */
+  readonly issueDetails: IIssueDetails | null
+  /** Whether details are being loaded */
+  readonly isLoadingDetails: boolean
+  /** Current issue info (may be updated after API calls) */
+  readonly currentIssue: IIssueInfo
+  /** Comment form state */
   readonly newComment: string
   readonly isSubmittingComment: boolean
+  /** Dropdown visibility states */
   readonly showAssigneeDropdown: boolean
   readonly showLabelDropdown: boolean
   readonly showMilestoneDropdown: boolean
   readonly showProjectStatusDropdown: boolean
 }
 
-/** Detailed view of a single task/issue with GitHub-like layout */
-export class TaskDetailPanel extends React.Component<
-  ITaskDetailPanelProps,
-  ITaskDetailPanelState
+/**
+ * Self-contained issue detail view component.
+ * Fetches all its own data and handles all API operations internally.
+ * Can be used from both Tasks and Issues tabs.
+ */
+export class IssueDetailView extends React.Component<
+  IIssueDetailViewProps,
+  IIssueDetailViewState
 > {
-  public constructor(props: ITaskDetailPanelProps) {
+  private api: API
+
+  public constructor(props: IIssueDetailViewProps) {
     super(props)
+    this.api = new API(props.account.endpoint, props.account.token)
     this.state = {
+      issueDetails: null,
+      isLoadingDetails: true,
+      currentIssue: props.issue,
       newComment: '',
       isSubmittingComment: false,
       showAssigneeDropdown: false,
@@ -192,8 +168,127 @@ export class TaskDetailPanel extends React.Component<
     }
   }
 
+  public componentDidMount() {
+    this.loadIssueDetails()
+  }
+
+  public componentDidUpdate(prevProps: IIssueDetailViewProps) {
+    // Reload if the issue changes
+    if (prevProps.issue.issueNumber !== this.props.issue.issueNumber ||
+        prevProps.owner !== this.props.owner ||
+        prevProps.repo !== this.props.repo) {
+      this.api = new API(this.props.account.endpoint, this.props.account.token)
+      this.setState({
+        issueDetails: null,
+        isLoadingDetails: true,
+        currentIssue: this.props.issue,
+      })
+      this.loadIssueDetails()
+    }
+  }
+
+  private async loadIssueDetails() {
+    const { owner, repo, issue, projects } = this.props
+
+    try {
+      // Fetch all data in parallel
+      const [commentsData, timelineData, collaborators, labels, milestones, issueData] = await Promise.all([
+        this.api.fetchIssueComments(owner, repo, String(issue.issueNumber)),
+        this.api.fetchIssueTimeline(owner, repo, issue.issueNumber),
+        this.api.fetchCollaborators(owner, repo),
+        this.api.fetchLabels(owner, repo),
+        this.api.fetchMilestones(owner, repo),
+        this.api.fetchIssue(owner, repo, issue.issueNumber),
+      ])
+
+      const comments = commentsData.map(c => ({
+        id: c.id,
+        body: c.body,
+        user: c.user,
+        createdAt: c.created_at,
+      }))
+
+      // Fetch project info if the repository has projects
+      let projectInfo: IProjectInfo | null = null
+      if (projects.length > 0) {
+        try {
+          const projectItems = await this.api.fetchIssueProjectItems(owner, repo, issue.issueNumber)
+
+          // Use the first project item (or match issue.projectTitle if set)
+          const projectItem = issue.projectTitle
+            ? projectItems.find(item => item.project.title === issue.projectTitle)
+            : projectItems[0]
+
+          if (projectItem) {
+            const project = projects.find(p => p.id === projectItem.project.id)
+
+            if (project) {
+              // Find the Status field and its options
+              const statusField = project.fields?.find(
+                f => f.name === 'Status' && f.dataType === 'SINGLE_SELECT'
+              )
+
+              if (statusField) {
+                // Extract current status from fieldValues
+                const statusFieldValue = projectItem.fieldValues.find(
+                  fv => fv.field?.name === 'Status' && fv.type === 'singleSelect'
+                )
+
+                projectInfo = {
+                  itemId: projectItem.id,
+                  projectId: project.id,
+                  projectTitle: project.title,
+                  statusFieldId: statusField.id,
+                  currentStatusOptionId: statusFieldValue?.type === 'singleSelect' ? statusFieldValue.optionId : null,
+                  currentStatusName: statusFieldValue?.type === 'singleSelect' ? statusFieldValue.name : null,
+                  statusOptions: statusField.options || [],
+                  fieldValues: projectItem.fieldValues,
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to fetch project info', e)
+        }
+      }
+
+      // Update current issue with fresh data from API
+      const updatedIssue: IIssueInfo = {
+        ...this.state.currentIssue,
+        title: issueData.title,
+        body: issueData.body,
+        state: issueData.state === 'open' ? 'OPEN' : 'CLOSED',
+        labels: issueData.labels?.map(l => ({
+          name: typeof l === 'string' ? l : l.name || '',
+          color: typeof l === 'string' ? '000000' : l.color || '000000',
+        })) || [],
+      }
+
+      const issueDetails: IIssueDetails = {
+        comments,
+        timeline: timelineData,
+        assignees: issueData.assignees || [],
+        availableAssignees: collaborators,
+        availableLabels: labels,
+        availableMilestones: milestones,
+        milestone: issueData.milestone || null,
+        projectInfo,
+      }
+
+      this.setState({
+        issueDetails,
+        isLoadingDetails: false,
+        currentIssue: updatedIssue,
+      })
+    } catch (e) {
+      console.warn('Failed to load issue details', e)
+      this.setState({ isLoadingDetails: false })
+    }
+  }
+
   public render() {
-    const { task, isActive } = this.props
+    const { taskFeatures } = this.props
+    const { currentIssue } = this.state
 
     return (
       <div className="task-detail-panel">
@@ -201,28 +296,32 @@ export class TaskDetailPanel extends React.Component<
           <button
             className="back-button"
             onClick={this.props.onBack}
-            title="Back to task list"
+            title="Back to list"
           >
             <Octicon symbol={octicons.arrowLeft} />
           </button>
           <div className="task-header-info">
-            <span className="task-repo">{task.repositoryName}</span>
+            <span className="task-repo">{currentIssue.repositoryName}</span>
           </div>
           <div className="task-detail-actions">
-            <button
-              className={classNames('action-button', { active: task.isPinned })}
-              onClick={this.props.onPin}
-              title={task.isPinned ? 'Unpin' : 'Pin to top'}
-            >
-              <Octicon symbol={task.isPinned ? octicons.pinSlash : octicons.pin} />
-            </button>
-            <button
-              className={classNames('action-button', { active: isActive })}
-              onClick={this.props.onActivate}
-              title={isActive ? 'Stop working' : 'Start working'}
-            >
-              <Octicon symbol={isActive ? octicons.square : octicons.play} />
-            </button>
+            {taskFeatures && (
+              <>
+                <button
+                  className={classNames('action-button', { active: taskFeatures.task.isPinned })}
+                  onClick={taskFeatures.onPin}
+                  title={taskFeatures.task.isPinned ? 'Unpin' : 'Pin to top'}
+                >
+                  <Octicon symbol={taskFeatures.task.isPinned ? octicons.pinSlash : octicons.pin} />
+                </button>
+                <button
+                  className={classNames('action-button', { active: taskFeatures.isActive })}
+                  onClick={taskFeatures.onActivate}
+                  title={taskFeatures.isActive ? 'Stop working' : 'Start working'}
+                >
+                  <Octicon symbol={taskFeatures.isActive ? octicons.square : octicons.play} />
+                </button>
+              </>
+            )}
             <button
               className="action-button"
               onClick={this.props.onOpenInBrowser}
@@ -246,25 +345,25 @@ export class TaskDetailPanel extends React.Component<
   }
 
   private renderMainContent() {
-    const { task, issueDetails, isLoadingDetails } = this.props
+    const { currentIssue, issueDetails, isLoadingDetails } = this.state
 
     return (
       <>
         {/* Title and status */}
         <div className="task-title-section">
           <h1 className="task-detail-title">
-            {task.title}
-            <span className="task-number"> #{task.issueNumber}</span>
+            {currentIssue.title}
+            <span className="task-number"> #{currentIssue.issueNumber}</span>
           </h1>
           <div className="task-status-row">
-            <span className={classNames('task-state-badge', task.state.toLowerCase())}>
-              <Octicon symbol={task.state === 'OPEN' ? octicons.issueOpened : octicons.issueClosed} />
-              {task.state === 'OPEN' ? 'Open' : 'Closed'}
+            <span className={classNames('task-state-badge', currentIssue.state.toLowerCase())}>
+              <Octicon symbol={currentIssue.state === 'OPEN' ? octicons.issueOpened : octicons.issueClosed} />
+              {currentIssue.state === 'OPEN' ? 'Open' : 'Closed'}
             </span>
-            {task.authorLogin && (
+            {currentIssue.authorLogin && (
               <span className="task-opened-by">
-                <strong>{task.authorLogin}</strong> opened this issue{' '}
-                {task.createdAt && this.formatDate(task.createdAt)}
+                <strong>{currentIssue.authorLogin}</strong> opened this issue{' '}
+                {currentIssue.createdAt && this.formatDate(currentIssue.createdAt)}
               </span>
             )}
           </div>
@@ -273,23 +372,23 @@ export class TaskDetailPanel extends React.Component<
         {/* Issue body */}
         <div className="task-body-section">
           <div className="comment-container first-comment">
-            {task.authorAvatarUrl && (
+            {currentIssue.authorAvatarUrl && (
               <img
-                src={task.authorAvatarUrl}
-                alt={task.authorLogin || ''}
+                src={currentIssue.authorAvatarUrl}
+                alt={currentIssue.authorLogin || ''}
                 className="comment-avatar"
               />
             )}
             <div className="comment-content">
               <div className="comment-header">
-                <span className="comment-author">{task.authorLogin}</span>
+                <span className="comment-author">{currentIssue.authorLogin}</span>
                 <span className="comment-date">
-                  commented {task.createdAt && this.formatDate(task.createdAt)}
+                  commented {currentIssue.createdAt && this.formatDate(currentIssue.createdAt)}
                 </span>
               </div>
               <div className="comment-body markdown-body">
-                {task.body ? (
-                  this.renderMarkdown(task.body)
+                {currentIssue.body ? (
+                  this.renderMarkdown(currentIssue.body)
                 ) : (
                   <p className="no-description">No description provided.</p>
                 )}
@@ -325,18 +424,18 @@ export class TaskDetailPanel extends React.Component<
               <div className="comment-form-actions">
                 <button
                   className={classNames('close-issue-button', {
-                    reopen: task.state !== 'OPEN',
+                    reopen: currentIssue.state !== 'OPEN',
                   })}
                   onClick={this.onToggleState}
                 >
                   <Octicon
                     symbol={
-                      task.state === 'OPEN'
+                      currentIssue.state === 'OPEN'
                         ? octicons.issueClosed
                         : octicons.issueReopened
                     }
                   />
-                  {task.state === 'OPEN' ? 'Close issue' : 'Reopen issue'}
+                  {currentIssue.state === 'OPEN' ? 'Close issue' : 'Reopen issue'}
                 </button>
                 <button
                   className="submit-comment-button"
@@ -357,7 +456,8 @@ export class TaskDetailPanel extends React.Component<
   }
 
   private renderSidebar() {
-    const { task, issueDetails, projects } = this.props
+    const { projects } = this.props
+    const { currentIssue, issueDetails } = this.state
 
     return (
       <>
@@ -404,9 +504,9 @@ export class TaskDetailPanel extends React.Component<
           </div>
           <div className="sidebar-section-content">
             {this.state.showLabelDropdown && this.renderLabelDropdown()}
-            {task.labels.length ? (
+            {currentIssue.labels.length ? (
               <div className="label-list">
-                {task.labels.map(label => (
+                {currentIssue.labels.map(label => (
                   <span
                     key={label.name}
                     className="label-badge"
@@ -439,11 +539,11 @@ export class TaskDetailPanel extends React.Component<
           <div className="sidebar-section-content">
             {this.state.showProjectStatusDropdown &&
               this.renderProjectStatusDropdown()}
-            {task.projectTitle || issueDetails?.projectInfo ? (
+            {currentIssue.projectTitle || issueDetails?.projectInfo ? (
               <div className="project-item-with-fields">
                 <div className="project-name-row">
                   <Octicon symbol={octicons.project} />
-                  <span className="project-title">{task.projectTitle || issueDetails?.projectInfo?.projectTitle}</span>
+                  <span className="project-title">{currentIssue.projectTitle || issueDetails?.projectInfo?.projectTitle}</span>
                 </div>
                 {this.renderProjectFields()}
               </div>
@@ -479,8 +579,8 @@ export class TaskDetailPanel extends React.Component<
           </div>
         </div>
 
-        {/* Time tracking (local feature) */}
-        {task.timeSpent > 0 && (
+        {/* Task-specific features: Time tracking */}
+        {this.props.taskFeatures?.task.timeSpent ? (
           <div className="sidebar-section">
             <div className="sidebar-section-header">
               <span>Time Tracked</span>
@@ -488,20 +588,21 @@ export class TaskDetailPanel extends React.Component<
             <div className="sidebar-section-content">
               <span className="time-value">
                 <Octicon symbol={octicons.clock} />
-                {Math.floor(task.timeSpent / 60)}h {task.timeSpent % 60}m
+                {Math.floor(this.props.taskFeatures.task.timeSpent / 60)}h{' '}
+                {this.props.taskFeatures.task.timeSpent % 60}m
               </span>
             </div>
           </div>
-        )}
+        ) : null}
 
-        {/* Personal notes (local feature) */}
-        {task.notes && (
+        {/* Task-specific features: Personal notes */}
+        {this.props.taskFeatures?.task.notes && (
           <div className="sidebar-section">
             <div className="sidebar-section-header">
               <span>Personal Notes</span>
             </div>
             <div className="sidebar-section-content">
-              <div className="notes-content">{task.notes}</div>
+              <div className="notes-content">{this.props.taskFeatures.task.notes}</div>
             </div>
           </div>
         )}
@@ -510,7 +611,7 @@ export class TaskDetailPanel extends React.Component<
   }
 
   private renderAssigneeDropdown() {
-    const { issueDetails } = this.props
+    const { issueDetails } = this.state
     if (!issueDetails) return null
 
     const currentLogins = new Set(
@@ -540,10 +641,10 @@ export class TaskDetailPanel extends React.Component<
   }
 
   private renderLabelDropdown() {
-    const { task, issueDetails } = this.props
+    const { currentIssue, issueDetails } = this.state
     if (!issueDetails) return null
 
-    const currentLabels = new Set(task.labels.map(l => l.name))
+    const currentLabels = new Set(currentIssue.labels.map(l => l.name))
 
     return (
       <div className="dropdown-menu label-dropdown">
@@ -567,7 +668,7 @@ export class TaskDetailPanel extends React.Component<
   }
 
   private renderMilestoneDropdown() {
-    const { issueDetails } = this.props
+    const { issueDetails } = this.state
     if (!issueDetails) return null
 
     return (
@@ -578,7 +679,7 @@ export class TaskDetailPanel extends React.Component<
             type="radio"
             name="milestone"
             checked={issueDetails.milestone === null}
-            onChange={() => this.props.onUpdateMilestone(null)}
+            onChange={() => this.onUpdateMilestone(null)}
           />
           <span>No milestone</span>
         </label>
@@ -588,7 +689,7 @@ export class TaskDetailPanel extends React.Component<
               type="radio"
               name="milestone"
               checked={issueDetails.milestone?.id === milestone.id}
-              onChange={() => this.props.onUpdateMilestone(milestone.number)}
+              onChange={() => this.onUpdateMilestone(milestone.number)}
             />
             <span>{milestone.title}</span>
           </label>
@@ -598,9 +699,9 @@ export class TaskDetailPanel extends React.Component<
   }
 
   private renderProjectStatusDropdown() {
-    const { task, projects, issueDetails } = this.props
+    const { projects } = this.props
+    const { currentIssue, issueDetails } = this.state
 
-    // If no projects available at all
     if (projects.length === 0) {
       return (
         <div className="dropdown-menu project-status-dropdown">
@@ -610,19 +711,19 @@ export class TaskDetailPanel extends React.Component<
       )
     }
 
-    // Find the project that matches this task's projectTitle (if any)
-    const currentProject = task.projectTitle
-      ? projects.find(p => p.title === task.projectTitle)
+    // Find the project that matches this issue's projectTitle (if any)
+    const currentProject = currentIssue.projectTitle
+      ? projects.find(p => p.title === currentIssue.projectTitle)
       : null
 
-    const currentStatusName = issueDetails?.projectInfo?.currentStatusName || task.projectStatus
+    const currentStatusName = issueDetails?.projectInfo?.currentStatusName || currentIssue.projectStatus
 
-    // Other projects (ones this task is not in)
+    // Other projects (ones this issue is not in)
     const otherProjects = currentProject
       ? projects.filter(p => p.id !== currentProject.id)
       : projects
 
-    // If task is in a project, show current project with status options
+    // If issue is in a project, show current project with status options
     if (currentProject) {
       const statusField = currentProject.fields.find(
         f => f.name === 'Status' && f.dataType === 'SINGLE_SELECT'
@@ -699,7 +800,7 @@ export class TaskDetailPanel extends React.Component<
       )
     }
 
-    // Task is not in a project - show list of projects to add to
+    // Issue is not in a project - show list of projects to add to
     return (
       <div className="dropdown-menu project-status-dropdown">
         <div className="dropdown-header">Add to project</div>
@@ -737,12 +838,15 @@ export class TaskDetailPanel extends React.Component<
    * Render all editable project fields (Status, Priority, Size, Focus, Iteration, etc.)
    */
   private renderProjectFields() {
-    const { task, projects, issueDetails } = this.props
+    const { projects } = this.props
+    const { currentIssue, issueDetails } = this.state
 
     // Find the current project
-    const currentProject = task.projectTitle
-      ? projects.find(p => p.title === task.projectTitle)
-      : null
+    const currentProject = currentIssue.projectTitle
+      ? projects.find(p => p.title === currentIssue.projectTitle)
+      : issueDetails?.projectInfo
+        ? projects.find(p => p.id === issueDetails.projectInfo?.projectId)
+        : null
 
     if (!currentProject) {
       return null
@@ -764,9 +868,6 @@ export class TaskDetailPanel extends React.Component<
     )
   }
 
-  /**
-   * Render a single project field with its current value and editor
-   */
   private renderProjectField(
     project: IAPIProjectV2,
     field: { id: string; name: string; dataType: string; options?: ReadonlyArray<{ id: string; name: string; color?: string }>; configuration?: { iterations: ReadonlyArray<{ id: string; title: string; startDate: string; duration: number }>; completedIterations: ReadonlyArray<{ id: string; title: string; startDate: string; duration: number }> } },
@@ -887,7 +988,6 @@ export class TaskDetailPanel extends React.Component<
   ) {
     const selectedIterationId = currentValue?.type === 'iteration' ? currentValue.iterationId : ''
     const iterations = field.configuration?.iterations ?? []
-    // Optionally include completed iterations for historical reference
     const completedIterations = field.configuration?.completedIterations ?? []
 
     // Mark the current iteration
@@ -953,9 +1053,6 @@ export class TaskDetailPanel extends React.Component<
     return this.renderActivityEvent(event, index)
   }
 
-  /**
-   * Render a comment event as a full comment box
-   */
   private renderCommentEvent(
     event: IAPIIssueTimelineEvent,
     index: number
@@ -985,9 +1082,6 @@ export class TaskDetailPanel extends React.Component<
     )
   }
 
-  /**
-   * Render a non-comment activity event
-   */
   private renderActivityEvent(
     event: IAPIIssueTimelineEvent,
     index: number
@@ -1022,21 +1116,15 @@ export class TaskDetailPanel extends React.Component<
     )
   }
 
-  /**
-   * Get the icon for a timeline event type
-   */
   private getEventIcon(eventType: string): JSX.Element {
     switch (eventType) {
       case 'labeled':
-        return <Octicon symbol={octicons.tag} />
       case 'unlabeled':
         return <Octicon symbol={octicons.tag} />
       case 'assigned':
-        return <Octicon symbol={octicons.person} />
       case 'unassigned':
         return <Octicon symbol={octicons.person} />
       case 'milestoned':
-        return <Octicon symbol={octicons.milestone} />
       case 'demilestoned':
         return <Octicon symbol={octicons.milestone} />
       case 'renamed':
@@ -1046,15 +1134,11 @@ export class TaskDetailPanel extends React.Component<
       case 'reopened':
         return <Octicon symbol={octicons.issueReopened} className="reopened" />
       case 'cross-referenced':
-        return <Octicon symbol={octicons.crossReference} />
       case 'referenced':
         return <Octicon symbol={octicons.crossReference} />
       case 'added_to_project':
-        return <Octicon symbol={octicons.project} />
       case 'added_to_project_v2':
-        return <Octicon symbol={octicons.project} />
       case 'moved_columns_in_project':
-        return <Octicon symbol={octicons.project} />
       case 'project_v2_item_status_changed':
         return <Octicon symbol={octicons.project} />
       case 'issue_type_added':
@@ -1062,7 +1146,6 @@ export class TaskDetailPanel extends React.Component<
       case 'review_requested':
         return <Octicon symbol={octicons.eye} />
       case 'connected':
-        return <Octicon symbol={octicons.link} />
       case 'disconnected':
         return <Octicon symbol={octicons.link} />
       case 'subscribed':
@@ -1074,9 +1157,6 @@ export class TaskDetailPanel extends React.Component<
     }
   }
 
-  /**
-   * Get the text description for a timeline event
-   */
   private getEventContent(event: IAPIIssueTimelineEvent): React.ReactNode {
     switch (event.event) {
       case 'labeled':
@@ -1251,11 +1331,12 @@ export class TaskDetailPanel extends React.Component<
         return 'was mentioned'
 
       default:
-        // Unknown event type - show generic message with the event type
         console.log('[Timeline] Unknown event type:', event.event, event)
         return `${event.event.replace(/_/g, ' ')}`
     }
   }
+
+  // === Event handlers ===
 
   private onCommentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     this.setState({ newComment: e.target.value })
@@ -1266,14 +1347,64 @@ export class TaskDetailPanel extends React.Component<
     if (!newComment.trim()) return
 
     this.setState({ isSubmittingComment: true })
-    this.props.onAddComment(newComment)
-    this.setState({ newComment: '', isSubmittingComment: false })
+
+    try {
+      const { owner, repo, issue } = this.props
+      const comment = await this.api.createIssueComment(
+        owner,
+        repo,
+        issue.issueNumber,
+        newComment
+      )
+
+      if (comment && this.state.issueDetails) {
+        const newCommentObj = {
+          id: comment.id,
+          body: comment.body,
+          user: comment.user,
+          createdAt: comment.created_at,
+        }
+        this.setState({
+          issueDetails: {
+            ...this.state.issueDetails,
+            comments: [...this.state.issueDetails.comments, newCommentObj],
+          },
+          newComment: '',
+          isSubmittingComment: false,
+        })
+        // Reload to get the updated timeline
+        this.loadIssueDetails()
+      }
+    } catch (e) {
+      console.warn('Failed to add comment', e)
+      this.setState({ isSubmittingComment: false })
+    }
   }
 
-  private onToggleState = () => {
-    const { task } = this.props
-    const newState = task.state === 'OPEN' ? 'closed' : 'open'
-    this.props.onUpdateState(newState)
+  private onToggleState = async () => {
+    const { currentIssue } = this.state
+    const newState = currentIssue.state === 'OPEN' ? 'closed' : 'open'
+
+    try {
+      const { owner, repo, issue } = this.props
+      await this.api.updateIssue(owner, repo, issue.issueNumber, { state: newState })
+
+      // Update local state immediately
+      this.setState({
+        currentIssue: {
+          ...currentIssue,
+          state: newState === 'open' ? 'OPEN' : 'CLOSED',
+        },
+      })
+
+      // Reload to get the updated timeline
+      this.loadIssueDetails()
+
+      // Notify parent if callback provided
+      this.props.onIssueUpdated?.()
+    } catch (e) {
+      console.warn('Failed to update issue state', e)
+    }
   }
 
   private toggleAssigneeDropdown = () => {
@@ -1312,6 +1443,81 @@ export class TaskDetailPanel extends React.Component<
     }))
   }
 
+  private onToggleAssignee = async (login: string) => {
+    const { issueDetails } = this.state
+    if (!issueDetails) return
+
+    const currentLogins = issueDetails.assignees.map(a => a.login)
+    const isAssigned = currentLogins.includes(login)
+
+    const newAssignees = isAssigned
+      ? currentLogins.filter(l => l !== login)
+      : [...currentLogins, login]
+
+    try {
+      const { owner, repo, issue } = this.props
+      const updatedIssue = await this.api.updateIssue(
+        owner,
+        repo,
+        issue.issueNumber,
+        { assignees: [...newAssignees] }
+      )
+
+      this.setState({
+        issueDetails: {
+          ...issueDetails,
+          assignees: updatedIssue.assignees || [],
+        },
+      })
+    } catch (e) {
+      console.warn('Failed to update assignees', e)
+    }
+  }
+
+  private onToggleLabel = async (labelName: string) => {
+    const { currentIssue } = this.state
+    const currentLabels = currentIssue.labels.map(l => l.name)
+    const hasLabel = currentLabels.includes(labelName)
+
+    const newLabels = hasLabel
+      ? currentLabels.filter(l => l !== labelName)
+      : [...currentLabels, labelName]
+
+    try {
+      const { owner, repo, issue } = this.props
+      await this.api.updateIssue(owner, repo, issue.issueNumber, { labels: [...newLabels] })
+
+      // Reload to get updated labels
+      this.loadIssueDetails()
+      this.props.onIssueUpdated?.()
+    } catch (e) {
+      console.warn('Failed to update labels', e)
+    }
+  }
+
+  private onUpdateMilestone = async (milestoneNumber: number | null) => {
+    try {
+      const { owner, repo, issue } = this.props
+      const updatedIssue = await this.api.updateIssue(
+        owner,
+        repo,
+        issue.issueNumber,
+        { milestone: milestoneNumber }
+      )
+
+      if (this.state.issueDetails) {
+        this.setState({
+          issueDetails: {
+            ...this.state.issueDetails,
+            milestone: updatedIssue.milestone || null,
+          },
+        })
+      }
+    } catch (e) {
+      console.warn('Failed to update milestone', e)
+    }
+  }
+
   private onSelectProjectStatusFromField = (
     projectId: string,
     fieldId: string,
@@ -1321,42 +1527,77 @@ export class TaskDetailPanel extends React.Component<
     this.setState({ showProjectStatusDropdown: false })
   }
 
-  private onUpdateProjectField = (
+  private onUpdateProjectField = async (
     projectId: string,
     fieldId: string,
     fieldType: string,
     value: string | number
   ) => {
-    const { issueDetails } = this.props
+    const { issueDetails } = this.state
     const projectInfo = issueDetails?.projectInfo
 
-    // We need the itemId from projectInfo (the link between issue and project)
     if (!projectInfo?.itemId) {
       console.error('Cannot update field: missing project item ID')
       return
     }
 
-    this.props.onUpdateProjectField(
-      projectId,
-      projectInfo.itemId,
-      fieldId,
-      fieldType,
-      value
-    )
+    try {
+      await this.api.updateProjectItemField(
+        projectId,
+        projectInfo.itemId,
+        fieldId,
+        fieldType,
+        value
+      )
+
+      // Reload to get updated field values
+      this.loadIssueDetails()
+      this.props.onIssueUpdated?.()
+    } catch (e) {
+      console.warn('Failed to update project field', e)
+    }
   }
 
-  private onAddToProjectWithStatus = (
+  private onAddToProjectWithStatus = async (
     projectId: string,
     statusFieldId: string,
     statusOptionId: string
   ) => {
-    if (!statusOptionId) return // User didn't select a status
-    this.props.onAddToProject(projectId, statusFieldId, statusOptionId)
-    this.setState({ showProjectStatusDropdown: false })
+    if (!statusOptionId) return
+
+    try {
+      const { issue } = this.props
+
+      // First, add the issue to the project
+      const itemId = await this.api.addIssueToProject(projectId, issue.issueId)
+
+      if (!itemId) {
+        console.warn('Failed to add issue to project - no item ID returned')
+        return
+      }
+
+      // Then set the status on the new project item
+      await this.api.updateProjectItemField(
+        projectId,
+        itemId,
+        statusFieldId,
+        'SINGLE_SELECT',
+        statusOptionId
+      )
+
+      this.setState({ showProjectStatusDropdown: false })
+
+      // Reload to show updated project info
+      this.loadIssueDetails()
+      this.props.onIssueUpdated?.()
+    } catch (e) {
+      console.warn('Failed to add issue to project', e)
+    }
   }
 
+  // === Utility methods ===
+
   private getStatusColor(color: string): string {
-    // GitHub Projects V2 uses color names, map them to CSS colors
     const colorMap: Record<string, string> = {
       GRAY: '#8b949e',
       RED: '#f85149',
@@ -1368,32 +1609,6 @@ export class TaskDetailPanel extends React.Component<
       PINK: '#db61a2',
     }
     return colorMap[color.toUpperCase()] || '#8b949e'
-  }
-
-  private onToggleAssignee = (login: string) => {
-    const { issueDetails } = this.props
-    if (!issueDetails) return
-
-    const currentLogins = issueDetails.assignees.map(a => a.login)
-    const isAssigned = currentLogins.includes(login)
-
-    const newAssignees = isAssigned
-      ? currentLogins.filter(l => l !== login)
-      : [...currentLogins, login]
-
-    this.props.onUpdateAssignees(newAssignees)
-  }
-
-  private onToggleLabel = (labelName: string) => {
-    const { task } = this.props
-    const currentLabels = task.labels.map(l => l.name)
-    const hasLabel = currentLabels.includes(labelName)
-
-    const newLabels = hasLabel
-      ? currentLabels.filter(l => l !== labelName)
-      : [...currentLabels, labelName]
-
-    this.props.onUpdateLabels(newLabels)
   }
 
   private formatDate(isoString: string): string {

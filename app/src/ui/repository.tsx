@@ -34,12 +34,15 @@ import { DragType } from '../models/drag-drop'
 import { PullRequestSuggestedNextAction } from '../models/pull-request'
 import { clamp } from '../lib/clamp'
 import { Emoji } from '../lib/emoji'
-import { TaskListPanel, TaskDetailPanel, IIssueDetails, IProjectInfo } from './tasks'
+import { TaskListPanel } from './tasks'
+import { IssueDetailView, IIssueInfo } from './tasks/issue-detail-view'
+import { IssueListPanel } from './issues'
+import { IAPIIssueWithMetadata } from '../lib/api'
+import { shell } from 'electron'
 import { isRepositoryWithGitHubRepository } from '../models/repository'
 import { ITask } from '../lib/databases/tasks-database'
 import { TaskViewMode, TaskSortOrder } from '../lib/stores/tasks-store'
 import { PopupType } from '../models/popup'
-import { API } from '../lib/api'
 
 interface IRepositoryViewProps {
   readonly repository: Repository
@@ -125,18 +128,17 @@ interface IRepositoryViewProps {
 interface IRepositoryViewState {
   readonly changesListScrollTop: number
   readonly compareListScrollTop: number
-  /** The currently selected task to show in detail view (null = show list) */
+  /** The currently selected task (for task-specific features like pin/active) */
   readonly selectedTask: ITask | null
-  /** Full issue details loaded from GitHub API */
-  readonly issueDetails: IIssueDetails | null
-  /** Whether issue details are being loaded */
-  readonly isLoadingDetails: boolean
+  /** The issue info to display in the detail view */
+  readonly selectedIssueInfo: IIssueInfo | null
 }
 
 const enum Tab {
   Changes = 0,
   History = 1,
   Tasks = 2,
+  Issues = 3,
 }
 
 export class RepositoryView extends React.Component<
@@ -163,8 +165,7 @@ export class RepositoryView extends React.Component<
       changesListScrollTop: 0,
       compareListScrollTop: 0,
       selectedTask: null,
-      issueDetails: null,
-      isLoadingDetails: false,
+      selectedIssueInfo: null,
     }
   }
 
@@ -210,6 +211,8 @@ export class RepositoryView extends React.Component<
       selectedTab = Tab.History
     } else if (section === RepositorySectionTab.Tasks) {
       selectedTab = Tab.Tasks
+    } else if (section === RepositorySectionTab.Issues) {
+      selectedTab = Tab.Issues
     }
 
     return (
@@ -225,6 +228,10 @@ export class RepositoryView extends React.Component<
 
         <div className="with-indicator" id="tasks-tab">
           <span>Tasks</span>
+        </div>
+
+        <div className="with-indicator" id="issues-tab">
+          <span>Issues</span>
         </div>
       </TabBar>
     )
@@ -372,8 +379,10 @@ export class RepositoryView extends React.Component<
         canCreateTasks={canCreateTasks}
         projectFilter={tasksState.projectFilter}
         statusFilter={tasksState.statusFilter}
+        iterationFilter={tasksState.iterationFilter}
         availableProjects={tasksState.availableProjects}
         availableStatuses={tasksState.availableStatuses}
+        availableIterations={tasksState.availableIterations}
         onTaskClick={this.onTaskClick}
         onTaskPin={this.onTaskPin}
         onTaskActivate={this.onTaskActivate}
@@ -385,12 +394,78 @@ export class RepositoryView extends React.Component<
         onTaskReorder={this.onTaskReorder}
         onProjectFilterChange={this.onProjectFilterChange}
         onStatusFilterChange={this.onStatusFilterChange}
+        onIterationFilterChange={this.onIterationFilterChange}
       />
     )
   }
 
+  private renderIssuesSidebar(): JSX.Element {
+    const { tasksState } = this.props
+
+    return (
+      <IssueListPanel
+        issues={tasksState.issues}
+        isLoading={tasksState.isLoadingIssues}
+        stateFilter={tasksState.issueStateFilter}
+        onRefresh={this.onIssuesRefresh}
+        onIssueClick={this.onIssueClick}
+        onOpenInBrowser={this.onIssueOpenInBrowser}
+        onStateFilterChange={this.onIssueStateFilterChange}
+      />
+    )
+  }
+
+  private onIssuesRefresh = () => {
+    const { repository } = this.props
+    if (isRepositoryWithGitHubRepository(repository)) {
+      this.props.dispatcher.refreshRepositoryIssues(repository)
+    }
+  }
+
+  private onIssueClick = (issue: IAPIIssueWithMetadata) => {
+    const { repository } = this.props
+
+    // Convert API issue to IIssueInfo for the detail view
+    const issueInfo: IIssueInfo = {
+      issueId: issue.node_id,
+      issueNumber: issue.number,
+      title: issue.title,
+      body: issue.body,
+      authorLogin: issue.user?.login || null,
+      authorAvatarUrl: issue.user?.avatar_url || null,
+      createdAt: issue.created_at || null,
+      repositoryName: isRepositoryWithGitHubRepository(repository)
+        ? `${repository.gitHubRepository.owner.login}/${repository.gitHubRepository.name}`
+        : repository.name,
+      url: issue.html_url,
+      state: issue.state === 'open' ? 'OPEN' : 'CLOSED',
+      labels: issue.labels?.map(l => ({
+        name: typeof l === 'string' ? l : l.name || '',
+        color: typeof l === 'string' ? '000000' : l.color || '000000',
+      })) || [],
+      projectStatus: null,
+      projectTitle: null,
+    }
+
+    // Show the issue detail view (no selectedTask since not from Tasks tab)
+    this.setState({ selectedTask: null, selectedIssueInfo: issueInfo })
+  }
+
+  private onIssueOpenInBrowser = (issue: IAPIIssueWithMetadata) => {
+    shell.openExternal(issue.html_url)
+  }
+
+  private onIssueStateFilterChange = (state: 'open' | 'closed' | 'all') => {
+    this.props.dispatcher.setIssueStateFilter(state)
+    // Re-fetch with new filter
+    const { repository } = this.props
+    if (isRepositoryWithGitHubRepository(repository)) {
+      this.props.dispatcher.refreshRepositoryIssues(repository)
+    }
+  }
+
   private onTaskDetailBack = () => {
-    this.setState({ selectedTask: null })
+    this.setState({ selectedTask: null, selectedIssueInfo: null })
   }
 
   private onAddTask = () => {
@@ -404,334 +479,24 @@ export class RepositoryView extends React.Component<
   }
 
   private onTaskClick = (task: ITask) => {
-    // Show the task detail view and load full issue details
-    this.setState({ selectedTask: task, issueDetails: null, isLoadingDetails: true })
-    this.loadIssueDetails(task)
-  }
-
-  private async loadIssueDetails(task: ITask) {
-    const { repository, accounts } = this.props
-    if (!isRepositoryWithGitHubRepository(repository)) {
-      this.setState({ isLoadingDetails: false })
-      return
+    // Convert ITask to IIssueInfo for the detail view
+    const issueInfo: IIssueInfo = {
+      issueId: task.issueId,
+      issueNumber: task.issueNumber,
+      title: task.title,
+      body: task.body,
+      authorLogin: task.authorLogin,
+      authorAvatarUrl: task.authorAvatarUrl,
+      createdAt: task.createdAt,
+      repositoryName: task.repositoryName,
+      url: task.url,
+      state: task.state,
+      labels: [...task.labels],
+      projectStatus: task.projectStatus,
+      projectTitle: task.projectTitle,
     }
-
-    const account = accounts.find(
-      a => a.endpoint === repository.gitHubRepository.endpoint
-    )
-    if (!account) {
-      this.setState({ isLoadingDetails: false })
-      return
-    }
-
-    try {
-      const api = new API(account.endpoint, account.token)
-      const owner = repository.gitHubRepository.owner.login
-      const name = repository.gitHubRepository.name
-      const issueNumber = task.issueNumber
-
-      // Fetch all data in parallel
-      const [commentsData, collaborators, labels, milestones, issueData, projects] = await Promise.all([
-        api.fetchIssueComments(owner, name, String(issueNumber)),
-        api.fetchCollaborators(owner, name),
-        api.fetchLabels(owner, name),
-        api.fetchMilestones(owner, name),
-        api.fetchIssue(owner, name, issueNumber),
-        api.fetchRepositoryProjects(owner, name).catch(() => []),
-      ])
-
-      const comments = commentsData.map(c => ({
-        id: c.id,
-        body: c.body,
-        user: c.user,
-        createdAt: c.created_at,
-      }))
-
-      // Fetch project info if the repository has projects
-      let projectInfo: IProjectInfo | null = null
-      if (projects.length > 0) {
-        try {
-          const projectItems = await api.fetchIssueProjectItems(owner, name, issueNumber)
-
-          // Use the first project item (or match task.projectTitle if set)
-          const projectItem = task.projectTitle
-            ? projectItems.find(item => item.project.title === task.projectTitle)
-            : projectItems[0]
-
-          if (projectItem) {
-            const project = projects.find(p => p.id === projectItem.project.id)
-
-            if (project) {
-              // Find the Status field and its options
-              const statusField = project.fields?.find(
-                f => f.name === 'Status' && f.dataType === 'SINGLE_SELECT'
-              )
-
-              if (statusField) {
-                // Extract current status from fieldValues
-                const statusFieldValue = projectItem.fieldValues.find(
-                  fv => fv.field?.name === 'Status'
-                )
-
-                projectInfo = {
-                  itemId: projectItem.id,
-                  projectId: project.id,
-                  projectTitle: project.title,
-                  statusFieldId: statusField.id,
-                  currentStatusOptionId: statusFieldValue?.optionId || null,
-                  currentStatusName: statusFieldValue?.name || null,
-                  statusOptions: statusField.options || [],
-                }
-              }
-            }
-          }
-        } catch (e) {
-          log.warn('Failed to fetch project info', e)
-        }
-      }
-
-      const issueDetails: IIssueDetails = {
-        comments,
-        assignees: issueData.assignees || [],
-        availableAssignees: collaborators,
-        availableLabels: labels,
-        availableMilestones: milestones,
-        milestone: issueData.milestone || null,
-        projectInfo,
-      }
-
-      this.setState({ issueDetails, isLoadingDetails: false })
-    } catch (e) {
-      log.warn('Failed to load issue details', e)
-      this.setState({ isLoadingDetails: false })
-    }
-  }
-
-  private getApiAndRepoInfo(): { api: API; owner: string; name: string } | null {
-    const { repository, accounts } = this.props
-    if (!isRepositoryWithGitHubRepository(repository)) return null
-
-    const account = accounts.find(
-      a => a.endpoint === repository.gitHubRepository.endpoint
-    )
-    if (!account) return null
-
-    return {
-      api: new API(account.endpoint, account.token),
-      owner: repository.gitHubRepository.owner.login,
-      name: repository.gitHubRepository.name,
-    }
-  }
-
-  private onAddComment = async (body: string) => {
-    const { selectedTask } = this.state
-    if (!selectedTask) return
-
-    const apiInfo = this.getApiAndRepoInfo()
-    if (!apiInfo) return
-
-    try {
-      const comment = await apiInfo.api.createIssueComment(
-        apiInfo.owner,
-        apiInfo.name,
-        selectedTask.issueNumber,
-        body
-      )
-      if (comment && this.state.issueDetails) {
-        const newComment = {
-          id: comment.id,
-          body: comment.body,
-          user: comment.user,
-          createdAt: comment.created_at,
-        }
-        this.setState({
-          issueDetails: {
-            ...this.state.issueDetails,
-            comments: [...this.state.issueDetails.comments, newComment],
-          },
-        })
-      }
-    } catch (e) {
-      log.warn('Failed to add comment', e)
-    }
-  }
-
-  private onUpdateAssignees = async (assignees: ReadonlyArray<string>) => {
-    const { selectedTask } = this.state
-    if (!selectedTask) return
-
-    const apiInfo = this.getApiAndRepoInfo()
-    if (!apiInfo) return
-
-    try {
-      const updatedIssue = await apiInfo.api.updateIssue(
-        apiInfo.owner,
-        apiInfo.name,
-        selectedTask.issueNumber,
-        { assignees: [...assignees] }
-      )
-      if (this.state.issueDetails) {
-        this.setState({
-          issueDetails: {
-            ...this.state.issueDetails,
-            assignees: updatedIssue.assignees || [],
-          },
-        })
-      }
-    } catch (e) {
-      log.warn('Failed to update assignees', e)
-    }
-  }
-
-  private onUpdateLabels = async (labels: ReadonlyArray<string>) => {
-    const { selectedTask } = this.state
-    if (!selectedTask) return
-
-    const apiInfo = this.getApiAndRepoInfo()
-    if (!apiInfo) return
-
-    try {
-      await apiInfo.api.updateIssue(
-        apiInfo.owner,
-        apiInfo.name,
-        selectedTask.issueNumber,
-        { labels: [...labels] }
-      )
-      // Refresh task data to get updated labels
-      if (isRepositoryWithGitHubRepository(this.props.repository)) {
-        this.props.dispatcher.refreshTasks(this.props.repository)
-      }
-    } catch (e) {
-      log.warn('Failed to update labels', e)
-    }
-  }
-
-  private onUpdateMilestone = async (milestoneNumber: number | null) => {
-    const { selectedTask } = this.state
-    if (!selectedTask) return
-
-    const apiInfo = this.getApiAndRepoInfo()
-    if (!apiInfo) return
-
-    try {
-      const updatedIssue = await apiInfo.api.updateIssue(
-        apiInfo.owner,
-        apiInfo.name,
-        selectedTask.issueNumber,
-        { milestone: milestoneNumber }
-      )
-      if (this.state.issueDetails) {
-        this.setState({
-          issueDetails: {
-            ...this.state.issueDetails,
-            milestone: updatedIssue.milestone || null,
-          },
-        })
-      }
-    } catch (e) {
-      log.warn('Failed to update milestone', e)
-    }
-  }
-
-  private onUpdateIssueState = async (state: 'open' | 'closed') => {
-    const { selectedTask } = this.state
-    if (!selectedTask) return
-
-    const apiInfo = this.getApiAndRepoInfo()
-    if (!apiInfo) return
-
-    try {
-      await apiInfo.api.updateIssue(
-        apiInfo.owner,
-        apiInfo.name,
-        selectedTask.issueNumber,
-        { state }
-      )
-      // Refresh task data to get updated state
-      if (isRepositoryWithGitHubRepository(this.props.repository)) {
-        this.props.dispatcher.refreshTasks(this.props.repository)
-      }
-    } catch (e) {
-      log.warn('Failed to update issue state', e)
-    }
-  }
-
-  private onUpdateProjectStatus = async (
-    projectId: string,
-    itemId: string,
-    fieldId: string,
-    optionId: string
-  ) => {
-    const apiInfo = this.getApiAndRepoInfo()
-    if (!apiInfo) return
-
-    try {
-      await apiInfo.api.updateProjectItemField(projectId, itemId, fieldId, optionId)
-
-      // Update the local state to reflect the change
-      if (this.state.issueDetails?.projectInfo) {
-        const statusOption = this.state.issueDetails.projectInfo.statusOptions.find(
-          o => o.id === optionId
-        )
-        this.setState({
-          issueDetails: {
-            ...this.state.issueDetails,
-            projectInfo: {
-              ...this.state.issueDetails.projectInfo,
-              currentStatusOptionId: optionId,
-              currentStatusName: statusOption?.name || null,
-            },
-          },
-        })
-      }
-
-      // Refresh task data to get updated project status
-      if (isRepositoryWithGitHubRepository(this.props.repository)) {
-        this.props.dispatcher.refreshTasks(this.props.repository)
-      }
-    } catch (e) {
-      log.warn('Failed to update project status', e)
-    }
-  }
-
-  private onAddToProject = async (
-    projectId: string,
-    statusFieldId: string,
-    statusOptionId: string
-  ) => {
-    const apiInfo = this.getApiAndRepoInfo()
-    if (!apiInfo) return
-
-    const selectedTask = this.state.selectedTask
-    if (!selectedTask) return
-
-    try {
-      // First, add the issue to the project
-      const itemId = await apiInfo.api.addIssueToProject(
-        projectId,
-        selectedTask.issueId
-      )
-
-      if (!itemId) {
-        log.warn('Failed to add issue to project - no item ID returned')
-        return
-      }
-
-      // Then set the status on the new project item
-      await apiInfo.api.updateProjectItemField(
-        projectId,
-        itemId,
-        statusFieldId,
-        statusOptionId
-      )
-
-      // Refresh task data to get updated project info
-      if (isRepositoryWithGitHubRepository(this.props.repository)) {
-        this.props.dispatcher.refreshTasks(this.props.repository)
-      }
-    } catch (e) {
-      log.warn('Failed to add issue to project', e)
-    }
+    // Show the task detail view
+    this.setState({ selectedTask: task, selectedIssueInfo: issueInfo })
   }
 
   private onTaskPin = (task: ITask) => {
@@ -782,6 +547,10 @@ export class RepositoryView extends React.Component<
     this.props.dispatcher.setTaskStatusFilter(status)
   }
 
+  private onIterationFilterChange = (iteration: string | null) => {
+    this.props.dispatcher.setTaskIterationFilter(iteration)
+  }
+
   private renderSidebarContents(): JSX.Element {
     const selectedSection = this.props.state.selectedSection
 
@@ -791,6 +560,8 @@ export class RepositoryView extends React.Component<
       return this.renderCompareSidebar()
     } else if (selectedSection === RepositorySectionTab.Tasks) {
       return this.renderTasksSidebar()
+    } else if (selectedSection === RepositorySectionTab.Issues) {
+      return this.renderIssuesSidebar()
     } else {
       return assertNever(selectedSection, 'Unknown repository section')
     }
@@ -876,10 +647,10 @@ export class RepositoryView extends React.Component<
   }
 
   private renderContentForTasks(): JSX.Element | null {
-    const { selectedTask, issueDetails, isLoadingDetails } = this.state
-    const { tasksState } = this.props
+    const { selectedTask, selectedIssueInfo } = this.state
+    const { repository, accounts, tasksState } = this.props
 
-    if (!selectedTask) {
+    if (!selectedIssueInfo) {
       // Show empty state when no task is selected
       return (
         <div className="task-content-empty">
@@ -890,28 +661,93 @@ export class RepositoryView extends React.Component<
       )
     }
 
-    const isActive = tasksState.activeTask?.id === selectedTask.id
+    // Get account and repo info for the API
+    if (!isRepositoryWithGitHubRepository(repository)) {
+      return null
+    }
+
+    const account = accounts.find(
+      a => a.endpoint === repository.gitHubRepository.endpoint
+    )
+    if (!account) {
+      return null
+    }
+
+    const owner = repository.gitHubRepository.owner.login
+    const repo = repository.gitHubRepository.name
+    const isActive = selectedTask ? tasksState.activeTask?.id === selectedTask.id : false
 
     return (
-      <TaskDetailPanel
-        task={selectedTask}
-        isActive={isActive}
-        issueDetails={issueDetails}
-        isLoadingDetails={isLoadingDetails}
+      <IssueDetailView
+        owner={owner}
+        repo={repo}
+        issue={selectedIssueInfo}
+        account={account}
         projects={tasksState.projects}
         onBack={this.onTaskDetailBack}
-        onPin={() => this.onTaskPin(selectedTask)}
-        onActivate={() => this.onTaskActivate(selectedTask)}
-        onOpenInBrowser={() => this.onTaskOpenInBrowser(selectedTask)}
-        onAddComment={this.onAddComment}
-        onUpdateAssignees={this.onUpdateAssignees}
-        onUpdateLabels={this.onUpdateLabels}
-        onUpdateMilestone={this.onUpdateMilestone}
-        onUpdateState={this.onUpdateIssueState}
-        onUpdateProjectStatus={this.onUpdateProjectStatus}
-        onAddToProject={this.onAddToProject}
+        onOpenInBrowser={() => shell.openExternal(selectedIssueInfo.url)}
+        taskFeatures={selectedTask ? {
+          task: selectedTask,
+          isActive,
+          onPin: () => this.onTaskPin(selectedTask),
+          onActivate: () => this.onTaskActivate(selectedTask),
+        } : undefined}
+        onIssueUpdated={this.onIssueUpdated}
       />
     )
+  }
+
+  private renderContentForIssues(): JSX.Element | null {
+    const { selectedIssueInfo } = this.state
+    const { repository, accounts, tasksState } = this.props
+
+    if (!selectedIssueInfo) {
+      // Show empty state when no issue is selected
+      return (
+        <div className="task-content-empty">
+          <div className="empty-state">
+            <p>Select an issue from the list to view details</p>
+          </div>
+        </div>
+      )
+    }
+
+    // Get account and repo info for the API
+    if (!isRepositoryWithGitHubRepository(repository)) {
+      return null
+    }
+
+    const account = accounts.find(
+      a => a.endpoint === repository.gitHubRepository.endpoint
+    )
+    if (!account) {
+      return null
+    }
+
+    const owner = repository.gitHubRepository.owner.login
+    const repo = repository.gitHubRepository.name
+
+    return (
+      <IssueDetailView
+        owner={owner}
+        repo={repo}
+        issue={selectedIssueInfo}
+        account={account}
+        projects={tasksState.projects}
+        onBack={this.onTaskDetailBack}
+        onOpenInBrowser={() => shell.openExternal(selectedIssueInfo.url)}
+        onIssueUpdated={this.onIssueUpdated}
+      />
+    )
+  }
+
+  private onIssueUpdated = () => {
+    // Refresh tasks and issues when an issue is updated
+    const { repository } = this.props
+    if (isRepositoryWithGitHubRepository(repository)) {
+      this.props.dispatcher.refreshTasks(repository)
+      this.props.dispatcher.refreshRepositoryIssues(repository)
+    }
   }
 
   private renderContentForHistory(): JSX.Element {
@@ -1078,6 +914,8 @@ export class RepositoryView extends React.Component<
       return this.renderContentForHistory()
     } else if (selectedSection === RepositorySectionTab.Tasks) {
       return this.renderContentForTasks()
+    } else if (selectedSection === RepositorySectionTab.Issues) {
+      return this.renderContentForIssues()
     } else {
       return assertNever(selectedSection, 'Unknown repository section')
     }
@@ -1161,6 +999,8 @@ export class RepositoryView extends React.Component<
       section = RepositorySectionTab.History
     } else if (tab === Tab.Tasks) {
       section = RepositorySectionTab.Tasks
+    } else if (tab === Tab.Issues) {
+      section = RepositorySectionTab.Issues
     } else {
       section = RepositorySectionTab.Changes
     }
@@ -1169,7 +1009,7 @@ export class RepositoryView extends React.Component<
       this.props.repository,
       section
     )
-    if (section !== RepositorySectionTab.Tasks) {
+    if (section !== RepositorySectionTab.Tasks && section !== RepositorySectionTab.Issues) {
       this.props.dispatcher.updateCompareForm(this.props.repository, {
         showBranchList: false,
       })
@@ -1181,6 +1021,14 @@ export class RepositoryView extends React.Component<
       isRepositoryWithGitHubRepository(this.props.repository)
     ) {
       this.props.dispatcher.fetchProjects(this.props.repository)
+    }
+
+    // Fetch issues when switching to Issues tab
+    if (
+      section === RepositorySectionTab.Issues &&
+      isRepositoryWithGitHubRepository(this.props.repository)
+    ) {
+      this.props.dispatcher.refreshRepositoryIssues(this.props.repository)
     }
   }
 

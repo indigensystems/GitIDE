@@ -37,7 +37,7 @@ export interface ITimeEntry {
 
 /** Local configuration stored in .ghdesktop */
 export interface IGHDesktopConfig {
-  sortOrder?: 'priority' | 'updated' | 'custom' | 'repository'
+  sortOrder?: 'priority' | 'updated' | 'custom' | 'repository' | 'iteration'
   viewMode?: 'all' | 'repo' | 'active' | 'pinned'
   pinnedTasks?: number[]
   customTaskOrder?: number[]

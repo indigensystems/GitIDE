@@ -22,7 +22,7 @@ import {
 } from '../ghdesktop-metadata'
 
 /** How tasks are sorted in the list */
-export type TaskSortOrder = 'priority' | 'updated' | 'custom' | 'repository'
+export type TaskSortOrder = 'priority' | 'updated' | 'custom' | 'repository' | 'iteration'
 
 /** Which tasks to show */
 export type TaskViewMode = 'all' | 'repo' | 'active' | 'pinned'
@@ -82,6 +82,23 @@ export interface ITasksState {
 
   /** Available statuses to filter by (derived from tasks) */
   readonly availableStatuses: ReadonlyArray<string>
+
+  /** Filter by iteration title (null = all iterations) */
+  readonly iterationFilter: string | null
+
+  /** Available iterations to filter by (derived from tasks) */
+  readonly availableIterations: ReadonlyArray<string>
+
+  // === Issues state (all repository issues) ===
+
+  /** All issues in the repository */
+  readonly issues: ReadonlyArray<IAPIIssueWithMetadata>
+
+  /** Whether issues are currently loading */
+  readonly isLoadingIssues: boolean
+
+  /** Filter for issue state */
+  readonly issueStateFilter: 'open' | 'closed' | 'all'
 }
 
 export { ITaskList, ITimeEntry }
@@ -115,6 +132,11 @@ export class TasksStore {
     defaultStatus: 'Todo',
     availableProjects: [],
     availableStatuses: [],
+    iterationFilter: null,
+    availableIterations: [],
+    issues: [],
+    isLoadingIssues: false,
+    issueStateFilter: 'open',
   }
 
   public constructor(db: TasksDatabase) {
@@ -220,22 +242,28 @@ export class TasksStore {
         // eslint-disable-next-line no-console
         console.log(`[syncTasks] issue #${apiIssue.number} projectItems:`, projectItems)
 
+        let projectIteration: string | null = null
+        let projectIterationStartDate: string | null = null
+
         if (projectItems.length > 0) {
           // Use the first project item's status
           const firstItem = projectItems[0]
           projectTitle = firstItem.project.title
 
-          // Find the Status field value
+          // Find the Status and Iteration field values
           for (const fieldValue of firstItem.fieldValues) {
-            if (fieldValue.field?.name === 'Status' && fieldValue.name) {
+            if (fieldValue.field?.name === 'Status' && fieldValue.type === 'singleSelect') {
               projectStatus = fieldValue.name
-              break
+            }
+            if (fieldValue.type === 'iteration') {
+              projectIteration = fieldValue.title
+              projectIterationStartDate = fieldValue.startDate
             }
           }
         }
 
         // eslint-disable-next-line no-console
-        console.log(`[syncTasks] issue #${apiIssue.number} parsed: projectTitle="${projectTitle}", projectStatus="${projectStatus}"`)
+        console.log(`[syncTasks] issue #${apiIssue.number} parsed: projectTitle="${projectTitle}", projectStatus="${projectStatus}", iteration="${projectIteration}"`)
 
         const taskData: Partial<ITask> = {
           issueId,
@@ -253,6 +281,8 @@ export class TasksStore {
           labels,
           projectStatus,
           projectTitle,
+          projectIteration,
+          projectIterationStartDate,
           updated_at: new Date().toISOString(),
         }
 
@@ -311,9 +341,10 @@ export class TasksStore {
     // Filter to only open tasks
     tasks = tasks.filter(t => t.state === 'OPEN')
 
-    // Compute available projects and statuses from all tasks (before filtering)
+    // Compute available projects, statuses, and iterations from all tasks (before filtering)
     const projectSet = new Set<string>()
     const statusSet = new Set<string>()
+    const iterationSet = new Set<string>()
     for (const task of tasks) {
       if (task.projectTitle) {
         projectSet.add(task.projectTitle)
@@ -321,12 +352,16 @@ export class TasksStore {
       if (task.projectStatus) {
         statusSet.add(task.projectStatus)
       }
+      if (task.projectIteration) {
+        iterationSet.add(task.projectIteration)
+      }
     }
     const availableProjects = Array.from(projectSet).sort()
     const availableStatuses = Array.from(statusSet).sort()
+    const availableIterations = Array.from(iterationSet).sort()
 
     // Apply project filter
-    const { projectFilter, statusFilter } = this.state
+    const { projectFilter, statusFilter, iterationFilter } = this.state
     if (projectFilter) {
       tasks = tasks.filter(t => t.projectTitle === projectFilter)
     }
@@ -334,6 +369,11 @@ export class TasksStore {
     // Apply status filter
     if (statusFilter) {
       tasks = tasks.filter(t => t.projectStatus === statusFilter)
+    }
+
+    // Apply iteration filter
+    if (iterationFilter) {
+      tasks = tasks.filter(t => t.projectIteration === iterationFilter)
     }
 
     // Apply sorting
@@ -349,6 +389,7 @@ export class TasksStore {
       activeTask,
       availableProjects,
       availableStatuses,
+      availableIterations,
     }
     this.emitUpdate()
   }
@@ -391,6 +432,27 @@ export class TasksStore {
         return sorted.sort((a, b) =>
           a.repositoryName.localeCompare(b.repositoryName)
         )
+      case 'iteration':
+        // Sort by iteration start date (earliest first), tasks without iteration at the end
+        return sorted.sort((a, b) => {
+          // Tasks with iteration come before tasks without
+          const aHasIteration = a.projectIterationStartDate !== null
+          const bHasIteration = b.projectIterationStartDate !== null
+          if (aHasIteration !== bHasIteration) return aHasIteration ? -1 : 1
+
+          // If both have iterations, sort by start date (current/upcoming first)
+          if (aHasIteration && bHasIteration) {
+            const aDate = new Date(a.projectIterationStartDate!).getTime()
+            const bDate = new Date(b.projectIterationStartDate!).getTime()
+            if (aDate !== bDate) return aDate - bDate
+            // Same iteration, sort by iteration name then by updated time
+            const iterCompare = (a.projectIteration || '').localeCompare(b.projectIteration || '')
+            if (iterCompare !== 0) return iterCompare
+          }
+
+          // Fallback to updated time
+          return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+        })
       case 'updated':
       default:
         return sorted.sort(
@@ -472,6 +534,12 @@ export class TasksStore {
   /** Set status filter */
   public async setStatusFilter(status: string | null): Promise<void> {
     this.state = { ...this.state, statusFilter: status }
+    await this.loadTasks()
+  }
+
+  /** Set iteration filter */
+  public async setIterationFilter(iteration: string | null): Promise<void> {
+    this.state = { ...this.state, iterationFilter: iteration }
     await this.loadTasks()
   }
 
@@ -746,5 +814,56 @@ export class TasksStore {
     }
 
     return this.metadataService.loadNotes(issueNumber)
+  }
+
+  // === Issues operations ===
+
+  /**
+   * Refresh all issues for a repository from the GitHub API.
+   */
+  public async refreshIssues(
+    account: Account,
+    repository: GitHubRepository
+  ): Promise<void> {
+    this.state = { ...this.state, isLoadingIssues: true }
+    this.emitUpdate()
+
+    const api = API.fromAccount(account)
+
+    try {
+      const issues = await api.fetchIssues(
+        repository.owner.login,
+        repository.name,
+        this.state.issueStateFilter,
+        null // since date - fetch all
+      )
+
+      // Cast to IAPIIssueWithMetadata since fetchIssues returns full issue data
+      this.state = {
+        ...this.state,
+        issues: issues as ReadonlyArray<IAPIIssueWithMetadata>,
+        isLoadingIssues: false,
+      }
+      this.emitUpdate()
+    } catch (error) {
+      this.state = { ...this.state, isLoadingIssues: false }
+      this.emitUpdate()
+      throw error
+    }
+  }
+
+  /**
+   * Set the issue state filter (open, closed, all).
+   */
+  public setIssueStateFilter(state: 'open' | 'closed' | 'all'): void {
+    this.state = { ...this.state, issueStateFilter: state }
+    this.emitUpdate()
+  }
+
+  /**
+   * Get the current issues state.
+   */
+  public getIssues(): ReadonlyArray<IAPIIssueWithMetadata> {
+    return this.state.issues
   }
 }

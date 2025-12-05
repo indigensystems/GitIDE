@@ -3612,6 +3612,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
     } else if (section === RepositorySectionTab.Tasks) {
       // Tasks are refreshed separately via TasksStore
       refreshSectionPromise = Promise.resolve()
+    } else if (section === RepositorySectionTab.Issues) {
+      // Issues are refreshed separately via TasksStore
+      refreshSectionPromise = Promise.resolve()
     } else {
       return assertNever(section, `Unknown section: ${section}`)
     }
@@ -8579,6 +8582,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
                 projectId,
                 projectItemId,
                 statusField.id,
+                'SINGLE_SELECT',
                 statusOptionId
               )
             }
@@ -8684,6 +8688,31 @@ export class AppStore extends TypedBaseStore<IAppState> {
   /** Set the task status filter */
   public async _setTaskStatusFilter(status: string | null): Promise<void> {
     await this.tasksStore.setStatusFilter(status)
+    this.emitUpdate()
+  }
+
+  /** Set the task iteration filter */
+  public async _setTaskIterationFilter(iteration: string | null): Promise<void> {
+    await this.tasksStore.setIterationFilter(iteration)
+    this.emitUpdate()
+  }
+
+  /** Refresh repository issues for the Issues tab */
+  public async _refreshRepositoryIssues(
+    repository: RepositoryWithGitHubRepository
+  ): Promise<void> {
+    const account = getAccountForRepository(this.accounts, repository)
+    if (!account) {
+      return
+    }
+
+    await this.tasksStore.refreshIssues(account, repository.gitHubRepository)
+    this.emitUpdate()
+  }
+
+  /** Set the issue state filter */
+  public _setIssueStateFilter(state: 'open' | 'closed' | 'all'): void {
+    this.tasksStore.setIssueStateFilter(state)
     this.emitUpdate()
   }
 }

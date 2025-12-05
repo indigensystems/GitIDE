@@ -342,6 +342,8 @@ export interface IAPIIssue {
   readonly title: string
   readonly state: 'open' | 'closed'
   readonly updated_at: string
+  /** GitHub GraphQL node ID */
+  readonly node_id: string
 }
 
 /** Label information from the GitHub API. */
@@ -380,12 +382,27 @@ export interface IAPIProjectStatusOption {
   readonly description?: string
 }
 
+/** GitHub Projects V2 iteration option */
+export interface IAPIProjectIterationOption {
+  readonly id: string
+  readonly title: string
+  readonly startDate: string
+  readonly duration: number
+}
+
+/** GitHub Projects V2 iteration configuration */
+export interface IAPIProjectIterationConfig {
+  readonly iterations: ReadonlyArray<IAPIProjectIterationOption>
+  readonly completedIterations: ReadonlyArray<IAPIProjectIterationOption>
+}
+
 /** GitHub Projects V2 field (e.g., Status, Priority) */
 export interface IAPIProjectField {
   readonly id: string
   readonly name: string
   readonly dataType: string
   readonly options?: ReadonlyArray<IAPIProjectStatusOption>
+  readonly configuration?: IAPIProjectIterationConfig
 }
 
 /** GitHub Projects V2 project */
@@ -397,6 +414,14 @@ export interface IAPIProjectV2 {
   readonly fields: ReadonlyArray<IAPIProjectField>
 }
 
+/** Field value types for GitHub Projects V2 */
+export type IAPIProjectFieldValue =
+  | { readonly type: 'singleSelect'; readonly field: { readonly name: string }; readonly name: string; readonly optionId: string }
+  | { readonly type: 'number'; readonly field: { readonly name: string }; readonly number: number }
+  | { readonly type: 'text'; readonly field: { readonly name: string }; readonly text: string }
+  | { readonly type: 'date'; readonly field: { readonly name: string }; readonly date: string }
+  | { readonly type: 'iteration'; readonly field: { readonly name: string }; readonly title: string; readonly iterationId: string; readonly startDate: string; readonly duration: number }
+
 /** Item in a GitHub Project V2 (links issue to project) */
 export interface IAPIProjectItem {
   readonly id: string
@@ -404,11 +429,7 @@ export interface IAPIProjectItem {
     readonly id: string
     readonly title: string
   }
-  readonly fieldValues: ReadonlyArray<{
-    readonly field?: { readonly name: string }
-    readonly name?: string
-    readonly optionId?: string
-  }>
+  readonly fieldValues: ReadonlyArray<IAPIProjectFieldValue>
 }
 
 /** The combined state of a ref. */
@@ -736,6 +757,55 @@ export interface IAPIComment {
   readonly html_url: string
   readonly user: IAPIIdentity
   readonly created_at: string
+}
+
+/** Represents an issue timeline event from GitHub */
+export interface IAPIIssueTimelineEvent {
+  readonly id?: number
+  readonly node_id?: string
+  readonly event: string
+  readonly created_at: string
+  readonly actor?: IAPIIdentity | null
+  readonly commit_id?: string | null
+  readonly commit_url?: string | null
+  // For comments
+  readonly body?: string
+  readonly user?: IAPIIdentity
+  readonly html_url?: string
+  // For labeled/unlabeled events
+  readonly label?: { name: string; color: string }
+  // For assigned/unassigned events
+  readonly assignee?: IAPIIdentity
+  readonly assigner?: IAPIIdentity
+  // For milestoned/demilestoned events
+  readonly milestone?: { title: string }
+  // For renamed events
+  readonly rename?: { from: string; to: string }
+  // For cross-referenced events
+  readonly source?: {
+    type?: string
+    issue?: {
+      number: number
+      title: string
+      html_url: string
+      repository?: {
+        full_name: string
+      }
+    }
+  }
+  // For added_to_project events
+  readonly project_card?: {
+    id: number
+    url: string
+    project_url: string
+    column_name: string
+    previous_column_name?: string
+  }
+  // For review_requested events
+  readonly requested_reviewer?: IAPIIdentity
+  readonly review_requester?: IAPIIdentity
+  // For state_change (closed/reopened)
+  readonly state_reason?: string | null
 }
 
 /** The server response when handling the OAuth callback (with code) to obtain an access token */
@@ -1453,6 +1523,49 @@ export class API {
     owner: string,
     name: string
   ): Promise<ReadonlyArray<IAPIProjectV2>> {
+    // Fragment for project fields - supports all editable field types
+    const projectFieldsFragment = `
+      fields(first: 30) {
+        nodes {
+          ... on ProjectV2Field {
+            id
+            name
+            dataType
+          }
+          ... on ProjectV2SingleSelectField {
+            id
+            name
+            dataType
+            options {
+              id
+              name
+              color
+              description
+            }
+          }
+          ... on ProjectV2IterationField {
+            id
+            name
+            dataType
+            configuration {
+              iterations {
+                id
+                title
+                startDate
+                duration
+              }
+              completedIterations {
+                id
+                title
+                startDate
+                duration
+              }
+            }
+          }
+        }
+      }
+    `
+
     // First try to get repository-level projects
     const repoQuery = `
       query($owner: String!, $name: String!) {
@@ -1463,26 +1576,7 @@ export class API {
               number
               title
               url
-              fields(first: 20) {
-                nodes {
-                  ... on ProjectV2Field {
-                    id
-                    name
-                    dataType
-                  }
-                  ... on ProjectV2SingleSelectField {
-                    id
-                    name
-                    dataType
-                    options {
-                      id
-                      name
-                      color
-                      description
-                    }
-                  }
-                }
-              }
+              ${projectFieldsFragment}
             }
           }
         }
@@ -1499,26 +1593,7 @@ export class API {
               number
               title
               url
-              fields(first: 20) {
-                nodes {
-                  ... on ProjectV2Field {
-                    id
-                    name
-                    dataType
-                  }
-                  ... on ProjectV2SingleSelectField {
-                    id
-                    name
-                    dataType
-                    options {
-                      id
-                      name
-                      color
-                      description
-                    }
-                  }
-                }
-              }
+              ${projectFieldsFragment}
             }
           }
         }
@@ -1535,6 +1610,7 @@ export class API {
         name: f.name,
         dataType: f.dataType,
         options: f.options,
+        configuration: f.configuration,
       })),
     })
 
@@ -1593,7 +1669,7 @@ export class API {
   }
 
   /**
-   * Fetch the project item info for an issue (its status in projects).
+   * Fetch the project item info for an issue (all field values in projects).
    */
   public async fetchIssueProjectItems(
     owner: string,
@@ -1611,9 +1687,10 @@ export class API {
                   id
                   title
                 }
-                fieldValues(first: 10) {
+                fieldValues(first: 30) {
                   nodes {
                     ... on ProjectV2ItemFieldSingleSelectValue {
+                      __typename
                       field {
                         ... on ProjectV2SingleSelectField {
                           name
@@ -1621,6 +1698,45 @@ export class API {
                       }
                       name
                       optionId
+                    }
+                    ... on ProjectV2ItemFieldNumberValue {
+                      __typename
+                      field {
+                        ... on ProjectV2Field {
+                          name
+                        }
+                      }
+                      number
+                    }
+                    ... on ProjectV2ItemFieldTextValue {
+                      __typename
+                      field {
+                        ... on ProjectV2Field {
+                          name
+                        }
+                      }
+                      text
+                    }
+                    ... on ProjectV2ItemFieldDateValue {
+                      __typename
+                      field {
+                        ... on ProjectV2Field {
+                          name
+                        }
+                      }
+                      date
+                    }
+                    ... on ProjectV2ItemFieldIterationValue {
+                      __typename
+                      field {
+                        ... on ProjectV2IterationField {
+                          name
+                        }
+                      }
+                      title
+                      iterationId
+                      startDate
+                      duration
                     }
                   }
                 }
@@ -1647,7 +1763,24 @@ export class API {
       const result = items.map((item: any) => ({
         id: item.id,
         project: item.project,
-        fieldValues: (item.fieldValues?.nodes ?? []).filter((v: any) => v.field),
+        fieldValues: (item.fieldValues?.nodes ?? [])
+          .filter((v: any) => v.field && v.__typename)
+          .map((v: any): IAPIProjectFieldValue => {
+            switch (v.__typename) {
+              case 'ProjectV2ItemFieldSingleSelectValue':
+                return { type: 'singleSelect', field: v.field, name: v.name, optionId: v.optionId }
+              case 'ProjectV2ItemFieldNumberValue':
+                return { type: 'number', field: v.field, number: v.number }
+              case 'ProjectV2ItemFieldTextValue':
+                return { type: 'text', field: v.field, text: v.text }
+              case 'ProjectV2ItemFieldDateValue':
+                return { type: 'date', field: v.field, date: v.date }
+              case 'ProjectV2ItemFieldIterationValue':
+                return { type: 'iteration', field: v.field, title: v.title, iterationId: v.iterationId, startDate: v.startDate, duration: v.duration }
+              default:
+                return { type: 'text', field: v.field, text: '' }
+            }
+          }),
       }))
       // eslint-disable-next-line no-console
       console.log(`[fetchIssueProjectItems] parsed result for #${issueNumber}:`, result)
@@ -1693,14 +1826,37 @@ export class API {
     }
   }
 
+  /** Value types for updating project fields */
+  public static buildProjectFieldValue(
+    fieldType: string,
+    value: string | number
+  ): Record<string, string | number> {
+    switch (fieldType) {
+      case 'SINGLE_SELECT':
+        return { singleSelectOptionId: value as string }
+      case 'NUMBER':
+        return { number: typeof value === 'number' ? value : parseFloat(value as string) }
+      case 'TEXT':
+        return { text: value as string }
+      case 'DATE':
+        return { date: value as string }
+      case 'ITERATION':
+        return { iterationId: value as string }
+      default:
+        return { singleSelectOptionId: value as string }
+    }
+  }
+
   /**
-   * Update a field value on a project item (e.g., change status).
+   * Update a field value on a project item (e.g., change status, priority, iteration).
+   * Supports: SINGLE_SELECT, NUMBER, TEXT, DATE, ITERATION
    */
   public async updateProjectItemField(
     projectId: string,
     itemId: string,
     fieldId: string,
-    optionId: string
+    fieldType: string,
+    value: string | number
   ): Promise<boolean> {
     const mutation = `
       mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: ProjectV2FieldValue!) {
@@ -1714,6 +1870,8 @@ export class API {
       }
     `
 
+    const fieldValue = API.buildProjectFieldValue(fieldType, value)
+
     try {
       const response = await this.ghRequest('POST', '/graphql', {
         body: {
@@ -1722,7 +1880,7 @@ export class API {
             projectId,
             itemId,
             fieldId,
-            value: { singleSelectOptionId: optionId },
+            value: fieldValue,
           },
         },
       })
@@ -1731,6 +1889,8 @@ export class API {
       }
 
       const json = await response.json()
+      // eslint-disable-next-line no-console
+      console.log(`[updateProjectItemField] response:`, json)
       return json.data?.updateProjectV2ItemFieldValue?.projectV2Item?.id != null
     } catch (e) {
       log.warn('updateProjectItemField: failed', e)
@@ -1961,6 +2121,29 @@ export class API {
     } catch (e) {
       log.debug(
         `failed fetching issue comments for ${owner}/${name}/issues/${issueNumber}`,
+        e
+      )
+      return []
+    }
+  }
+
+  /** Fetches the timeline of events for an issue. */
+  public async fetchIssueTimeline(
+    owner: string,
+    name: string,
+    issueNumber: number
+  ): Promise<IAPIIssueTimelineEvent[]> {
+    try {
+      const path = `/repos/${owner}/${name}/issues/${issueNumber}/timeline`
+      // Timeline API now uses standard accept header (graduated from preview)
+      const response = await this.ghRequest('GET', path)
+      const timeline = await parsedResponse<IAPIIssueTimelineEvent[]>(response)
+      console.log(`[fetchIssueTimeline] ${owner}/${name}#${issueNumber}: got ${timeline.length} events`)
+      return timeline
+    } catch (e) {
+      console.error(`[fetchIssueTimeline] failed for ${owner}/${name}#${issueNumber}:`, e)
+      log.debug(
+        `failed fetching issue timeline for ${owner}/${name}/issues/${issueNumber}`,
         e
       )
       return []

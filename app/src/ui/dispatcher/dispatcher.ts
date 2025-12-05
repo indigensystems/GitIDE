@@ -4101,6 +4101,21 @@ export class Dispatcher {
     this.appStore._setTaskStatusFilter(status)
   }
 
+  /** Set the task iteration filter */
+  public setTaskIterationFilter(iteration: string | null): void {
+    this.appStore._setTaskIterationFilter(iteration)
+  }
+
+  /** Refresh repository issues for the Issues tab */
+  public refreshRepositoryIssues(repository: RepositoryWithGitHubRepository): Promise<void> {
+    return this.appStore._refreshRepositoryIssues(repository)
+  }
+
+  /** Set the issue state filter */
+  public setIssueStateFilter(state: 'open' | 'closed' | 'all'): void {
+    this.appStore._setIssueStateFilter(state)
+  }
+
   /** Reorder a task (for custom sort order) */
   public reorderTask(taskId: number, newOrder: number): Promise<void> {
     return this.appStore._reorderTask(taskId, newOrder)

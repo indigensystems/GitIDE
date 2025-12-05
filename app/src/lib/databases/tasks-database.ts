@@ -57,6 +57,12 @@ export interface ITask {
   /** Title of the linked project (if any) */
   readonly projectTitle: string | null
 
+  /** Iteration title from linked project (if any) */
+  readonly projectIteration: string | null
+
+  /** Iteration start date from linked project (if any) - ISO format */
+  readonly projectIterationStartDate: string | null
+
   // === Local-only fields (not synced to GitHub) ===
 
   /** Whether this task is pinned to the top of the list */
