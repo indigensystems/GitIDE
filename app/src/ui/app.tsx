@@ -55,11 +55,12 @@ import {
   Toolbar,
   ToolbarDropdown,
   DropdownState,
+  ToolbarDropdownStyle,
   PushPullButton,
   BranchDropdown,
   RevertProgress,
 } from './toolbar'
-import { iconForRepository, OcticonSymbol } from './octicons'
+import { iconForRepository, OcticonSymbol, Octicon } from './octicons'
 import * as octicons from './octicons/octicons.generated'
 import {
   showCertificateTrustDialog,
@@ -68,6 +69,7 @@ import {
   selectAllWindowContents,
   installWindowsCLI,
   uninstallWindowsCLI,
+  showOpenDialog,
 } from './main-process-proxy'
 import { DiscardChanges } from './discard-changes'
 import { Welcome } from './welcome'
@@ -79,6 +81,8 @@ import { AppError } from './app-error'
 import { MissingRepository } from './missing-repository'
 import { AddExistingRepository, CreateRepository } from './add-repository'
 import { CloneRepository } from './clone-repository'
+import { CloneableRepositoryFilterList } from './clone-repository/cloneable-repository-filter-list'
+import { ILocalRepoInfo } from './clone-repository/group-repositories'
 import { CreateBranch } from './create-branch'
 import { SignIn } from './sign-in'
 import { InstallGit } from './install-git'
@@ -193,7 +197,7 @@ import {
 } from './secret-scanning/push-protection-error-dialog'
 import { GenerateCommitMessageOverrideWarning } from './generate-commit-message/generate-commit-message-override-warning'
 import { GenerateCommitMessageDisclaimer } from './generate-commit-message/generate-commit-message-disclaimer'
-import { IAPICreatePushProtectionBypassResponse } from '../lib/api'
+import { IAPICreatePushProtectionBypassResponse, getDotComAPIEndpoint, IAPIRepository, IAPIProjectV2 } from '../lib/api'
 import {
   BypassPushProtectionDialog,
   BypassReason,
@@ -2907,13 +2911,90 @@ export class App extends React.Component<IAppProps, IAppState> {
     )
   }
 
+  private getLocalRepositoryInfos = (): ReadonlyArray<ILocalRepoInfo> => {
+    const localRepos: ILocalRepoInfo[] = []
+    for (const repo of this.state.repositories) {
+      if (repo instanceof Repository && repo.gitHubRepository) {
+        localRepos.push({
+          fullName: repo.gitHubRepository.fullName,
+          path: repo.path,
+        })
+      }
+    }
+    return localRepos
+  }
+
+  private onCloneAPIRepository = (repo: IAPIRepository) => {
+    this.props.dispatcher.closeFoldout(FoldoutType.Repository)
+    this.showCloneRepo(repo.clone_url)
+  }
+
+  private onLocateRepository = (path: string) => {
+    this.props.dispatcher.closeFoldout(FoldoutType.Repository)
+    shell.showItemInFolder(path)
+  }
+
+  private onAddExistingRepository = async (repo: IAPIRepository) => {
+    const path = await showOpenDialog({
+      properties: ['openDirectory'],
+    })
+
+    if (path === null) {
+      return
+    }
+
+    const repoType = await getRepositoryType(path)
+    if (repoType.kind !== 'regular' && repoType.kind !== 'bare') {
+      this.props.dispatcher.postError(
+        new Error(
+          `The selected folder is not a Git repository. Please choose a folder that contains a .git directory.`
+        )
+      )
+      return
+    }
+
+    const addedRepos = await this.props.dispatcher.addRepositories([path])
+    if (addedRepos.length > 0) {
+      const addedRepo = addedRepos[0]
+      await this.props.dispatcher.selectRepository(addedRepo)
+      this.props.dispatcher.closeFoldout(FoldoutType.Repository)
+    }
+  }
+
   private renderRepositoryList = (): JSX.Element => {
     const selectedRepository = this.state.selectedState
       ? this.state.selectedState.repository
       : null
 
-    const { useCustomShell, selectedShell } = this.state
+    const { useCustomShell, selectedShell, selectedOwner, ownerRepositories, loadingOwnerRepos } = this.state
     const filterText = this.state.repositoryFilterText
+
+    // If an owner is selected, show GitHub repos from that owner
+    if (selectedOwner) {
+      const account = this.state.accounts.find(a => a.endpoint === getDotComAPIEndpoint())
+      if (account) {
+        const localRepos = this.getLocalRepositoryInfos()
+        return (
+          <CloneableRepositoryFilterList
+            account={account}
+            selectedItem={this.state.selectedAPIRepository}
+            onSelectionChanged={this.onAPIRepositorySelectionChanged}
+            repositories={ownerRepositories.length > 0 ? ownerRepositories : null}
+            loading={loadingOwnerRepos}
+            filterText={filterText}
+            onFilterTextChanged={this.onRepositoryFilterTextChanged}
+            onRefreshRepositories={this.onRefreshOwnerRepositories}
+            onItemClicked={this.onAPIRepositoryClicked}
+            localRepositories={localRepos}
+            onCloneRepository={this.onCloneAPIRepository}
+            onLocateRepository={this.onLocateRepository}
+            onAddExistingRepository={this.onAddExistingRepository}
+          />
+        )
+      }
+    }
+
+    // Default: show local repositories
     return (
       <RepositoriesList
         filterText={filterText}
@@ -2936,6 +3017,38 @@ export class App extends React.Component<IAppProps, IAppState> {
         dispatcher={this.props.dispatcher}
       />
     )
+  }
+
+  private onAPIRepositorySelectionChanged = (repo: IAPIRepository | null) => {
+    this.props.dispatcher.setSelectedAPIRepository(repo)
+  }
+
+  private onRefreshOwnerRepositories = () => {
+    // Refresh by re-selecting the owner
+    if (this.state.selectedOwner) {
+      this.props.dispatcher.setSelectedOwner(this.state.selectedOwner)
+    }
+  }
+
+  private onAPIRepositoryClicked = (repo: IAPIRepository) => {
+    // Check if this repo is already cloned locally
+    const repoFullName = `${repo.owner.login}/${repo.name}`
+    const localRepo = this.state.repositories.find(r => {
+      if (r instanceof Repository && r.gitHubRepository) {
+        return r.gitHubRepository.fullName === repoFullName
+      }
+      return false
+    })
+
+    if (localRepo) {
+      // If already cloned, select it
+      this.onSelectionChanged(localRepo)
+      this.props.dispatcher.closeFoldout(FoldoutType.Repository)
+    } else {
+      // If not cloned, open the clone dialog with this repo's URL
+      this.props.dispatcher.closeFoldout(FoldoutType.Repository)
+      this.showCloneRepo(repo.clone_url)
+    }
   }
 
   private viewOnGitHub = (
@@ -3043,17 +3156,6 @@ export class App extends React.Component<IAppProps, IAppState> {
 
     const tooltip = repository && !isOpen ? repository.path : undefined
 
-    const foldoutWidth = clamp(this.state.sidebarWidth)
-
-    const foldoutStyle: React.CSSProperties = {
-      position: 'absolute',
-      marginLeft: 0,
-      width: foldoutWidth,
-      minWidth: foldoutWidth,
-      height: '100%',
-      top: 0,
-    }
-
     /** The dropdown focus trap will stop focus event propagation we made need
      * in some of our dialogs (noticed with Lists). Disabled this when dialogs
      * are open */
@@ -3065,12 +3167,13 @@ export class App extends React.Component<IAppProps, IAppState> {
         title={title}
         description={__DARWIN__ ? 'Current Repository' : 'Current repository'}
         tooltip={tooltip}
-        foldoutStyle={foldoutStyle}
+        dropdownStyle={ToolbarDropdownStyle.MultiOption}
         onContextMenu={this.onRepositoryToolbarButtonContextMenu}
         onDropdownStateChanged={this.onRepositoryDropdownStateChanged}
         dropdownContentRenderer={this.renderRepositoryList}
         dropdownState={currentState}
         enableFocusTrap={enableFocusTrap}
+        showDisclosureArrow={true}
       />
     )
   }
@@ -3381,6 +3484,8 @@ export class App extends React.Component<IAppProps, IAppState> {
 
     return (
       <Toolbar id="desktop-app-toolbar">
+        {this.renderOwnerToolbarButton()}
+        {this.renderProjectToolbarButton()}
         <div className="sidebar-section" style={{ width }}>
           {this.renderRepositoryToolbarButton()}
         </div>
@@ -3388,6 +3493,204 @@ export class App extends React.Component<IAppProps, IAppState> {
         {this.renderPushPullToolbarButton()}
       </Toolbar>
     )
+  }
+
+  private organizationsLoadRequested = false
+
+  private renderOwnerToolbarButton() {
+    // Get the current account (prefer dotcom)
+    const account = this.state.accounts.find(a => a.endpoint === getDotComAPIEndpoint())
+    if (!account) {
+      return null
+    }
+
+    // Load organizations if we haven't yet
+    if (!this.organizationsLoadRequested) {
+      this.organizationsLoadRequested = true
+      this.props.dispatcher.loadOrganizations()
+    }
+
+    const { selectedOwner, currentFoldout } = this.state
+    const isOpen = currentFoldout?.type === FoldoutType.Owner
+    const currentState: DropdownState = isOpen ? 'open' : 'closed'
+
+    const title = selectedOwner || 'All Owners'
+    const icon = octicons.person
+
+    return (
+      <ToolbarDropdown
+        className="owner-dropdown"
+        icon={icon}
+        title={title}
+        description="Owner"
+        onDropdownStateChanged={this.onOwnerDropdownStateChanged}
+        dropdownContentRenderer={this.renderOwnerList}
+        dropdownState={currentState}
+        dropdownStyle={ToolbarDropdownStyle.MultiOption}
+        showDisclosureArrow={true}
+      />
+    )
+  }
+
+  private renderOwnerList = (): JSX.Element => {
+    const { selectedOwner, organizations, ownerFilterText } = this.state
+    const account = this.state.accounts.find(a => a.endpoint === getDotComAPIEndpoint())
+
+    const items: Array<{ id: string; login: string; isOrg: boolean }> = [
+      { id: '', login: 'All Owners', isOrg: false },
+    ]
+
+    if (account) {
+      items.push({ id: account.login, login: account.login, isOrg: false })
+    }
+
+    for (const org of organizations) {
+      items.push({ id: org.login, login: org.login, isOrg: true })
+    }
+
+    // Filter items based on filter text
+    const filterText = ownerFilterText?.toLowerCase() || ''
+    const filteredItems = filterText
+      ? items.filter(item => item.login.toLowerCase().includes(filterText))
+      : items
+
+    return (
+      <div className="owner-dropdown-list">
+        <input
+          type="text"
+          className="filter-input"
+          placeholder="Filter owners..."
+          value={ownerFilterText || ''}
+          onChange={e => this.setState({ ownerFilterText: e.target.value })}
+          autoFocus
+        />
+        <div className="owner-dropdown-items">
+          {filteredItems.map(item => {
+            const isSelected =
+              (item.id === '' && selectedOwner === null) ||
+              item.login === selectedOwner
+            return (
+              <button
+                key={item.id}
+                className={`owner-dropdown-item ${isSelected ? 'selected' : ''}`}
+                onClick={() => this.onOwnerSelected(item.id === '' ? null : item.login)}
+                type="button"
+              >
+                <span className="owner-name">{item.login}</span>
+                {isSelected && <Octicon symbol={octicons.check} />}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  private onOwnerSelected = (owner: string | null) => {
+    this.props.dispatcher.setSelectedOwner(owner)
+    this.props.dispatcher.closeFoldout(FoldoutType.Owner)
+  }
+
+  private onOwnerDropdownStateChanged = (
+    state: DropdownState,
+    source: 'keyboard' | 'pointer'
+  ) => {
+    if (state === 'open') {
+      this.props.dispatcher.showFoldout({ type: FoldoutType.Owner })
+    } else {
+      this.props.dispatcher.closeFoldout(FoldoutType.Owner)
+    }
+  }
+
+  private renderProjectToolbarButton() {
+    const { selectedProject, selectedOwner, currentFoldout } = this.state
+
+    // Only show if an owner is selected
+    if (!selectedOwner) {
+      return null
+    }
+
+    const isOpen = currentFoldout?.type === FoldoutType.Project
+    const currentState: DropdownState = isOpen ? 'open' : 'closed'
+
+    const title = selectedProject?.title || 'All Projects'
+    const icon = octicons.project
+
+    return (
+      <ToolbarDropdown
+        className="project-dropdown"
+        icon={icon}
+        title={title}
+        description="Project"
+        onDropdownStateChanged={this.onProjectDropdownStateChanged}
+        dropdownContentRenderer={this.renderProjectList}
+        dropdownState={currentState}
+        dropdownStyle={ToolbarDropdownStyle.MultiOption}
+        showDisclosureArrow={true}
+      />
+    )
+  }
+
+  private renderProjectList = (): JSX.Element => {
+    const { selectedProject, ownerProjects, projectFilterText } = this.state
+
+    const items: Array<{ id: string; title: string; project: IAPIProjectV2 | null }> = [
+      { id: '', title: 'All Projects', project: null },
+      ...ownerProjects.map(p => ({ id: p.id, title: p.title, project: p })),
+    ]
+
+    // Filter items based on filter text
+    const filterText = projectFilterText?.toLowerCase() || ''
+    const filteredItems = filterText
+      ? items.filter(item => item.title.toLowerCase().includes(filterText))
+      : items
+
+    return (
+      <div className="project-dropdown-list">
+        <input
+          type="text"
+          className="filter-input"
+          placeholder="Filter projects..."
+          value={projectFilterText || ''}
+          onChange={e => this.setState({ projectFilterText: e.target.value })}
+          autoFocus
+        />
+        <div className="project-dropdown-items">
+          {filteredItems.map(item => {
+            const isSelected =
+              (item.project === null && selectedProject === null) ||
+              (item.project !== null && selectedProject !== null && item.project.id === selectedProject.id)
+            return (
+              <button
+                key={item.id}
+                className={`project-dropdown-item ${isSelected ? 'selected' : ''}`}
+                onClick={() => this.onProjectSelected(item.project)}
+                type="button"
+              >
+                <span className="project-name">{item.title}</span>
+                {isSelected && <Octicon symbol={octicons.check} />}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  private onProjectSelected = (project: IAPIProjectV2 | null) => {
+    this.props.dispatcher.setSelectedProject(project)
+    this.props.dispatcher.closeFoldout(FoldoutType.Project)
+  }
+
+  private onProjectDropdownStateChanged = (
+    state: DropdownState,
+    source: 'keyboard' | 'pointer'
+  ) => {
+    if (state === 'open') {
+      this.props.dispatcher.showFoldout({ type: FoldoutType.Project })
+    } else {
+      this.props.dispatcher.closeFoldout(FoldoutType.Project)
+    }
   }
 
   private renderRepository() {

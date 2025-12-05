@@ -6,6 +6,8 @@ import {
   IAPIFullRepository,
   IAPICheckSuite,
   IAPIRepoRuleset,
+  IAPIProjectV2,
+  IAPIRepository,
   getDotComAPIEndpoint,
   IAPICreatePushProtectionBypassResponse,
 } from '../../lib/api'
@@ -4104,6 +4106,26 @@ export class Dispatcher {
   /** Set the task iteration filter */
   public setTaskIterationFilter(iteration: string | null): void {
     this.appStore._setTaskIterationFilter(iteration)
+  }
+
+  /** Set the selected owner (user or org) for filtering */
+  public setSelectedOwner(owner: string | null): Promise<void> {
+    return this.appStore._setSelectedOwner(owner)
+  }
+
+  /** Set the selected project for filtering */
+  public setSelectedProject(project: IAPIProjectV2 | null): Promise<void> {
+    return this.appStore._setSelectedProject(project)
+  }
+
+  /** Load organizations for the current account */
+  public loadOrganizations(): Promise<void> {
+    return this.appStore._loadOrganizations()
+  }
+
+  /** Set the selected API repository (for browsing remote repos) */
+  public setSelectedAPIRepository(repo: IAPIRepository | null): void {
+    this.appStore._setSelectedAPIRepository(repo)
   }
 
   /** Refresh repository issues for the Issues tab */

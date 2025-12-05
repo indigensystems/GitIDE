@@ -27,6 +27,12 @@ export interface ICloneableRepositoryListItem extends IFilterListItem {
 
   /** Whether or not the repository is archived */
   readonly archived?: boolean
+
+  /** Whether or not the repository is cloned locally */
+  readonly isCloned?: boolean
+
+  /** The local path of the repository if cloned */
+  readonly localPath?: string
 }
 
 function getIcon(gitHubRepo: IAPIRepository): OcticonSymbol {
@@ -40,21 +46,48 @@ function getIcon(gitHubRepo: IAPIRepository): OcticonSymbol {
   return octicons.repo
 }
 
-const toListItems = (repositories: ReadonlyArray<IAPIRepository>) =>
-  repositories
-    .map<ICloneableRepositoryListItem>(repo => ({
-      id: repo.html_url,
-      text: [`${repo.owner.login}/${repo.name}`],
-      url: repo.clone_url,
-      name: repo.name,
-      icon: getIcon(repo),
-      archived: repo.archived,
-    }))
+/** Info about a local repository for matching against API repos */
+export interface ILocalRepoInfo {
+  /** The full name (owner/repo) of the GitHub repository */
+  readonly fullName: string
+  /** The local path of the repository */
+  readonly path: string
+}
+
+const toListItems = (
+  repositories: ReadonlyArray<IAPIRepository>,
+  localRepos?: ReadonlyArray<ILocalRepoInfo>
+) => {
+  // Build a map for quick lookup of local repos by fullName
+  const localRepoMap = new Map<string, string>()
+  if (localRepos) {
+    for (const local of localRepos) {
+      localRepoMap.set(local.fullName.toLowerCase(), local.path)
+    }
+  }
+
+  return repositories
+    .map<ICloneableRepositoryListItem>(repo => {
+      const fullName = `${repo.owner.login}/${repo.name}`.toLowerCase()
+      const localPath = localRepoMap.get(fullName)
+      return {
+        id: repo.html_url,
+        text: [`${repo.owner.login}/${repo.name}`],
+        url: repo.clone_url,
+        name: repo.name,
+        icon: getIcon(repo),
+        archived: repo.archived,
+        isCloned: localPath !== undefined,
+        localPath,
+      }
+    })
     .sort((x, y) => compare(x.name, y.name))
+}
 
 export function groupRepositories(
   repositories: ReadonlyArray<IAPIRepository>,
-  login: string
+  login: string,
+  localRepos?: ReadonlyArray<ILocalRepoInfo>
 ): ReadonlyArray<IFilterListGroup<ICloneableRepositoryListItem>> {
   const groups = groupBy(repositories, x =>
     caseInsensitiveEquals(x.owner.login, login)
@@ -63,7 +96,10 @@ export function groupRepositories(
   )
 
   return entries(groups)
-    .map(([identifier, repos]) => ({ identifier, items: toListItems(repos) }))
+    .map(([identifier, repos]) => ({
+      identifier,
+      items: toListItems(repos, localRepos),
+    }))
     .sort((x, y) => {
       if (x.identifier === YourRepositoriesIdentifier) {
         return -1
