@@ -98,13 +98,16 @@ import {
 import {
   API,
   getAccountForEndpoint,
-  IAPIOrganization,
   getEndpointForRepository,
+  getDotComAPIEndpoint,
   IAPIFullRepository,
   IAPIComment,
   IAPIRepoRuleset,
   deleteToken,
   IAPICreatePushProtectionBypassResponse,
+  IAPIOrganization,
+  IAPIProjectV2,
+  IAPIRepository,
 } from '../api'
 import { shell } from '../app-shell'
 import {
@@ -412,6 +415,8 @@ const externalEditorKey: string = 'externalEditor'
 const imageDiffTypeDefault = ImageDiffType.TwoUp
 const imageDiffTypeKey = 'image-diff-type'
 
+const selectedOwnerKey = 'selected-owner'
+
 const hideWhitespaceInChangesDiffDefault = false
 const hideWhitespaceInChangesDiffKey = 'hide-whitespace-in-changes-diff'
 const hideWhitespaceInHistoryDiffDefault = false
@@ -623,6 +628,36 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private commitMessageGenerationButtonClicked: boolean = false
 
   private showChangesFilter: boolean = false
+
+  /** The currently selected owner/organization for repository filtering */
+  private selectedOwner: string | null = null
+
+  /** Filter text for the owner dropdown */
+  private ownerFilterText: string = ''
+
+  /** The organizations available to the user */
+  private organizations: ReadonlyArray<IAPIOrganization> = []
+
+  /** The currently selected project for task filtering */
+  private selectedProject: IAPIProjectV2 | null = null
+
+  /** Filter text for the project dropdown */
+  private projectFilterText: string = ''
+
+  /** The projects available for the selected owner */
+  private ownerProjects: ReadonlyArray<IAPIProjectV2> = []
+
+  /** All remote repositories available to the selected owner */
+  private ownerRepositories: ReadonlyArray<IAPIRepository> = []
+
+  /** Whether owner repositories are currently being loaded */
+  private loadingOwnerRepos: boolean = false
+
+  /** Repository names that have items in the selected project */
+  private projectRepoNames: ReadonlySet<string> = new Set()
+
+  /** The currently selected API repository (for browsing remote repos) */
+  private selectedAPIRepository: IAPIRepository | null = null
 
   public constructor(
     private readonly gitHubUserStore: GitHubUserStore,
@@ -1125,6 +1160,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
         this.commitMessageGenerationButtonClicked,
       showChangesFilter: this.showChangesFilter,
       tasksState: this.tasksStore.getState(),
+      selectedOwner: this.selectedOwner,
+      ownerFilterText: this.ownerFilterText,
+      organizations: this.organizations,
+      selectedProject: this.selectedProject,
+      projectFilterText: this.projectFilterText,
+      ownerProjects: this.ownerProjects,
+      ownerRepositories: this.ownerRepositories,
+      loadingOwnerRepos: this.loadingOwnerRepos,
+      projectRepoNames: this.projectRepoNames,
+      selectedAPIRepository: this.selectedAPIRepository,
     }
   }
 
@@ -2379,6 +2424,13 @@ export class AppStore extends TypedBaseStore<IAppState> {
       showChangesFilterDefault
     )
 
+    // Restore selected owner from localStorage and load repos
+    const savedOwner = localStorage.getItem(selectedOwnerKey)
+    if (savedOwner !== null || this.accounts.length > 0) {
+      // Restore saved owner, or default to null (All owners) if accounts exist
+      this._setSelectedOwner(savedOwner)
+    }
+
     this.emitUpdateNow()
 
     this.accountsStore.refresh()
@@ -3614,6 +3666,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
       refreshSectionPromise = Promise.resolve()
     } else if (section === RepositorySectionTab.Issues) {
       // Issues are refreshed separately via TasksStore
+      refreshSectionPromise = Promise.resolve()
+    } else if (section === RepositorySectionTab.Code) {
+      // Code view is a static file browser, no refresh needed
       refreshSectionPromise = Promise.resolve()
     } else {
       return assertNever(section, `Unknown section: ${section}`)
@@ -8713,6 +8768,100 @@ export class AppStore extends TypedBaseStore<IAppState> {
   /** Set the issue state filter */
   public _setIssueStateFilter(state: 'open' | 'closed' | 'all'): void {
     this.tasksStore.setIssueStateFilter(state)
+    this.emitUpdate()
+  }
+
+  /** Set the selected owner (user or org) for filtering */
+  public async _setSelectedOwner(owner: string | null): Promise<void> {
+    log.info(`[_setSelectedOwner] Setting owner to: ${owner}`)
+    this.selectedOwner = owner
+    // Clear project selection when owner changes
+    this.selectedProject = null
+    this.ownerProjects = []
+    this.ownerRepositories = []
+    this.projectRepoNames = new Set()
+    this.loadingOwnerRepos = true
+
+    // Persist the selected owner
+    if (owner) {
+      localStorage.setItem(selectedOwnerKey, owner)
+    } else {
+      localStorage.removeItem(selectedOwnerKey)
+    }
+
+    // Emit immediately so UI shows loading state
+    this.emitUpdate()
+
+    // Find a GitHub.com account to use for API calls
+    const account = this.accounts.find(
+      a => a.endpoint === getDotComAPIEndpoint()
+    )
+    log.info(`[_setSelectedOwner] Found account: ${account?.login}`)
+    if (account) {
+      try {
+        const api = API.fromAccount(account)
+        if (owner) {
+          // Fetch projects for the owner
+          this.ownerProjects = await api.fetchOwnerProjects(owner)
+          log.info(`[_setSelectedOwner] Fetched ${this.ownerProjects.length} projects`)
+          // Fetch repositories for the owner
+          if (owner === account.login) {
+            log.info(`[_setSelectedOwner] Fetching user repos for ${owner}`)
+            this.ownerRepositories = await api.fetchUserRepos()
+          } else {
+            log.info(`[_setSelectedOwner] Fetching org repos for ${owner}`)
+            this.ownerRepositories = await api.fetchOrgRepos(owner)
+          }
+        } else {
+          // "All owners" - fetch all repos accessible by the user
+          log.info(`[_setSelectedOwner] Fetching all repos for all owners`)
+          this.ownerRepositories = await api.fetchUserRepos()
+        }
+        log.info(`[_setSelectedOwner] Fetched ${this.ownerRepositories.length} repositories`)
+      } catch (e) {
+        log.error(`[_setSelectedOwner] Error fetching repos:`, e)
+      } finally {
+        this.loadingOwnerRepos = false
+      }
+    } else {
+      log.info(`[_setSelectedOwner] No account found`)
+      this.loadingOwnerRepos = false
+    }
+
+    this.emitUpdate()
+  }
+
+  /** Set the selected project for filtering */
+  public async _setSelectedProject(
+    project: IAPIProjectV2 | null
+  ): Promise<void> {
+    this.selectedProject = project
+    // TODO: Fetch project items and build projectRepoNames when we add repo highlighting
+    this.projectRepoNames = new Set()
+
+    // Sync the project filter to the tasks store
+    await this.tasksStore.setProjectFilter(project?.title ?? null)
+
+    this.emitUpdate()
+  }
+
+  /** Load organizations for the current account */
+  public async _loadOrganizations(): Promise<void> {
+    const account = this.accounts.find(
+      a => a.endpoint === getDotComAPIEndpoint()
+    )
+    if (!account) {
+      return
+    }
+
+    const api = API.fromAccount(account)
+    this.organizations = await api.fetchOrgs()
+    this.emitUpdate()
+  }
+
+  /** Set the selected API repository (for browsing remote repos) */
+  public _setSelectedAPIRepository(repo: IAPIRepository | null): void {
+    this.selectedAPIRepository = repo
     this.emitUpdate()
   }
 }

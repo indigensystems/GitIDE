@@ -753,27 +753,28 @@ app.on(
 function createWindow() {
   const window = new AppWindow()
 
-  if (__DEV__) {
-    const {
-      default: installExtension,
-      REACT_DEVELOPER_TOOLS,
-    } = require('electron-devtools-installer')
+  // Disabled: Dev extensions cause "Unable to initialize web-extension bridge" errors
+  // if (__DEV__) {
+  //   const {
+  //     default: installExtension,
+  //     REACT_DEVELOPER_TOOLS,
+  //   } = require('electron-devtools-installer')
 
-    const axeDevTools = {
-      id: 'lhdoppojpmngadmnindnejefpokejbdd',
-    }
+  //   const axeDevTools = {
+  //     id: 'lhdoppojpmngadmnindnejefpokejbdd',
+  //   }
 
-    const extensions = [REACT_DEVELOPER_TOOLS, axeDevTools]
+  //   const extensions = [REACT_DEVELOPER_TOOLS, axeDevTools]
 
-    try {
-      installExtension(extensions, {
-        loadExtensionOptions: { allowFileAccess: true },
-      })
-      console.log('Added Extensions: "React Developer Tools", "axe DevTools"')
-    } catch (e) {
-      console.log('An error occurred while loading extensions: ', e)
-    }
-  }
+  //   try {
+  //     installExtension(extensions, {
+  //       loadExtensionOptions: { allowFileAccess: true },
+  //     })
+  //     console.log('Added Extensions: "React Developer Tools", "axe DevTools"')
+  //   } catch (e) {
+  //     console.log('An error occurred while loading extensions: ', e)
+  //   }
+  // }
 
   window.onClosed(() => {
     mainWindow = null

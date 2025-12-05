@@ -1239,6 +1239,28 @@ export class API {
     }
   }
 
+  /** Fetch all repositories for an organization. */
+  public async fetchOrgRepos(
+    org: string
+  ): Promise<ReadonlyArray<IAPIRepository>> {
+    try {
+      return await this.fetchAll<IAPIRepository>(`orgs/${org}/repos`)
+    } catch (e) {
+      log.warn(`fetchOrgRepos: failed for org ${org}`, e)
+      return []
+    }
+  }
+
+  /** Fetch all repositories for the authenticated user. */
+  public async fetchUserRepos(): Promise<ReadonlyArray<IAPIRepository>> {
+    try {
+      return await this.fetchAll<IAPIRepository>('user/repos')
+    } catch (e) {
+      log.warn(`fetchUserRepos: failed with endpoint ${this.endpoint}`, e)
+      return []
+    }
+  }
+
   /** Create a new GitHub repository with the given properties. */
   public async createRepository(
     org: IAPIOrganization | null,
@@ -1667,6 +1689,136 @@ export class API {
     // eslint-disable-next-line no-console
     console.log(`[fetchRepositoryProjects] found ${allProjects.length} projects for ${owner}/${name}`)
     return allProjects
+  }
+
+  /**
+   * Fetch all GitHub Projects V2 for an owner (organization or user).
+   * First tries as an organization, then falls back to user if that fails.
+   */
+  public async fetchOwnerProjects(
+    owner: string
+  ): Promise<ReadonlyArray<IAPIProjectV2>> {
+    const projectFieldsFragment = `
+      fields(first: 30) {
+        nodes {
+          ... on ProjectV2Field {
+            id
+            name
+            dataType
+          }
+          ... on ProjectV2SingleSelectField {
+            id
+            name
+            dataType
+            options {
+              id
+              name
+              color
+              description
+            }
+          }
+          ... on ProjectV2IterationField {
+            id
+            name
+            dataType
+            configuration {
+              iterations {
+                id
+                title
+                startDate
+                duration
+              }
+              completedIterations {
+                id
+                title
+                startDate
+                duration
+              }
+            }
+          }
+        }
+      }
+    `
+
+    const orgQuery = `
+      query($owner: String!) {
+        organization(login: $owner) {
+          projectsV2(first: 50) {
+            nodes {
+              id
+              number
+              title
+              url
+              ${projectFieldsFragment}
+            }
+          }
+        }
+      }
+    `
+
+    const userQuery = `
+      query($owner: String!) {
+        user(login: $owner) {
+          projectsV2(first: 50) {
+            nodes {
+              id
+              number
+              title
+              url
+              ${projectFieldsFragment}
+            }
+          }
+        }
+      }
+    `
+
+    const mapProject = (p: any): IAPIProjectV2 => ({
+      id: p.id,
+      number: p.number,
+      title: p.title,
+      url: p.url,
+      fields: (p.fields?.nodes ?? []).map((f: any) => ({
+        id: f.id,
+        name: f.name,
+        dataType: f.dataType,
+        options: f.options,
+        configuration: f.configuration,
+      })),
+    })
+
+    // Try organization first
+    try {
+      const response = await this.ghRequest('POST', '/graphql', {
+        body: { query: orgQuery, variables: { owner } },
+      })
+      if (response !== null) {
+        const json = await response.json()
+        const projects = json.data?.organization?.projectsV2?.nodes
+        if (projects) {
+          return projects.map(mapProject)
+        }
+      }
+    } catch (e) {
+      log.debug(`fetchOwnerProjects: ${owner} is not an organization`, e)
+    }
+
+    // Fall back to user query
+    try {
+      const response = await this.ghRequest('POST', '/graphql', {
+        body: { query: userQuery, variables: { owner } },
+      })
+      if (response !== null) {
+        const json = await response.json()
+        const projects = json.data?.user?.projectsV2?.nodes
+        if (projects) {
+          return projects.map(mapProject)
+        }
+      }
+    } catch (e) {
+      log.warn(`fetchOwnerProjects: failed to fetch projects for ${owner}`, e)
+    }
+
+    return []
   }
 
   /**
@@ -2595,9 +2747,13 @@ export class API {
     } catch (err) {
       // If the repository isn't owned by the current user there's no way for us
       // to preemptively check whether rulesets are enabled so we give it a shot
-      // but there's no need to log if it fails. Same with 404s, i.e the user
+      // but there's no need to log if it fails. Same with 404s and 403s, i.e the user
       // doesn't have access to the repo any more or it's been deleted.
-      if (!isRulesetsNotEnabledError(err) && !isNotFoundApiError(err)) {
+      if (
+        !isRulesetsNotEnabledError(err) &&
+        !isNotFoundApiError(err) &&
+        !isForbiddenApiError(err)
+      ) {
         log.info(
           `[fetchRepoRulesForBranch] unable to fetch repo rules for branch: ${branch} | ${path}`,
           err
@@ -2622,9 +2778,13 @@ export class API {
     } catch (err) {
       // If the repository isn't owned by the current user there's no way for us
       // to preemptively check whether rulesets are enabled so we give it a shot
-      // but there's no need to log if it fails. Same with 404s, i.e the user
+      // but there's no need to log if it fails. Same with 404s and 403s, i.e the user
       // doesn't have access to the repo any more or it's been deleted.
-      if (!isRulesetsNotEnabledError(err) && !isNotFoundApiError(err)) {
+      if (
+        !isRulesetsNotEnabledError(err) &&
+        !isNotFoundApiError(err) &&
+        !isForbiddenApiError(err)
+      ) {
         log.info(
           `[fetchAllRepoRulesets] unable to fetch all repo rulesets | ${path}`,
           err
@@ -3380,3 +3540,6 @@ const isRulesetsNotEnabledError = (error: any) =>
 
 const isNotFoundApiError = (error: any) =>
   error instanceof APIError && error.responseStatus === 404
+
+const isForbiddenApiError = (error: any) =>
+  error instanceof APIError && error.responseStatus === 403
