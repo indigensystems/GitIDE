@@ -66,6 +66,7 @@ export class SandboxedMarkdown extends React.PureComponent<
   private frameContainingDivRef: HTMLDivElement | null = null
   private contentDivRef: HTMLDivElement | null = null
   private markdownEmitter?: MarkdownEmitter
+  private _isMounted = false
 
   /**
    * Resize observer used for tracking height changes in the markdown
@@ -75,6 +76,9 @@ export class SandboxedMarkdown extends React.PureComponent<
   private resizeDebounceId: number | null = null
 
   private onDocumentScroll = debounce(() => {
+    if (!this._isMounted) {
+      return
+    }
     this.setState({
       tooltipOffset: this.frameRef?.getBoundingClientRect() ?? new DOMRect(),
     })
@@ -145,6 +149,7 @@ export class SandboxedMarkdown extends React.PureComponent<
   }
 
   public async componentDidMount() {
+    this._isMounted = true
     this.initializeMarkdownEmitter()
 
     if (this.frameRef !== null) {
@@ -164,9 +169,13 @@ export class SandboxedMarkdown extends React.PureComponent<
   }
 
   public componentWillUnmount() {
+    this._isMounted = false
     this.markdownEmitter?.dispose()
     this.resizeObserver.disconnect()
     document.removeEventListener('scroll', this.onDocumentScroll)
+    // Cancel any pending debounced calls
+    this.onDocumentScroll.cancel()
+    this.onMarkdownUpdated.cancel()
   }
 
   /**
@@ -232,7 +241,7 @@ export class SandboxedMarkdown extends React.PureComponent<
   }
 
   private setupTooltips(frameRef: HTMLIFrameElement) {
-    if (frameRef.contentDocument === null) {
+    if (!this._isMounted || frameRef.contentDocument === null) {
       return
     }
 

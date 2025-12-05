@@ -3667,6 +3667,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
     } else if (section === RepositorySectionTab.Issues) {
       // Issues are refreshed separately via TasksStore
       refreshSectionPromise = Promise.resolve()
+    } else if (section === RepositorySectionTab.Code) {
+      // Code view is a static file browser, no refresh needed
+      refreshSectionPromise = Promise.resolve()
     } else {
       return assertNever(section, `Unknown section: ${section}`)
     }

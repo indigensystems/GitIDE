@@ -483,6 +483,7 @@ export type Foldout =
   | { type: FoldoutType.Project }
 
 export enum RepositorySectionTab {
+  Code,
   Changes,
   History,
   Tasks,

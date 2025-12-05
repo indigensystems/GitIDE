@@ -37,6 +37,7 @@ import { Emoji } from '../lib/emoji'
 import { TaskListPanel } from './tasks'
 import { IssueDetailView, IIssueInfo } from './tasks/issue-detail-view'
 import { IssueListPanel } from './issues'
+import { CodeViewSidebar, CodeViewContent, IOpenTab } from './code-view'
 import { IAPIIssueWithMetadata } from '../lib/api'
 import { shell } from 'electron'
 import { isRepositoryWithGitHubRepository } from '../models/repository'
@@ -132,13 +133,18 @@ interface IRepositoryViewState {
   readonly selectedTask: ITask | null
   /** The issue info to display in the detail view */
   readonly selectedIssueInfo: IIssueInfo | null
+  /** The open tabs in the code view */
+  readonly openCodeTabs: ReadonlyArray<IOpenTab>
+  /** The currently active tab in the code view */
+  readonly activeCodeTab: string | null
 }
 
 const enum Tab {
-  Changes = 0,
-  History = 1,
-  Issues = 2,
-  Tasks = 3,
+  Code = 0,
+  Changes = 1,
+  History = 2,
+  Issues = 3,
+  Tasks = 4,
 }
 
 export class RepositoryView extends React.Component<
@@ -166,6 +172,8 @@ export class RepositoryView extends React.Component<
       compareListScrollTop: 0,
       selectedTask: null,
       selectedIssueInfo: null,
+      openCodeTabs: [],
+      activeCodeTab: null,
     }
   }
 
@@ -207,7 +215,9 @@ export class RepositoryView extends React.Component<
   private renderTabs(): JSX.Element {
     const section = this.props.state.selectedSection
     let selectedTab = Tab.Changes
-    if (section === RepositorySectionTab.History) {
+    if (section === RepositorySectionTab.Code) {
+      selectedTab = Tab.Code
+    } else if (section === RepositorySectionTab.History) {
       selectedTab = Tab.History
     } else if (section === RepositorySectionTab.Tasks) {
       selectedTab = Tab.Tasks
@@ -217,6 +227,10 @@ export class RepositoryView extends React.Component<
 
     return (
       <TabBar selectedIndex={selectedTab} onTabClicked={this.onTabClicked}>
+        <div className="with-indicator" id="code-tab">
+          <span>Code</span>
+        </div>
+
         <span className="with-indicator" id="changes-tab">
           <span>Changes</span>
           {this.renderChangesBadge()}
@@ -415,6 +429,62 @@ export class RepositoryView extends React.Component<
     )
   }
 
+  private renderCodeSidebar(): JSX.Element {
+    return (
+      <CodeViewSidebar
+        repositoryPath={this.props.repository.path}
+        selectedFile={this.state.activeCodeTab}
+        onFileSelected={this.onCodeFileSelected}
+      />
+    )
+  }
+
+  private onCodeFileSelected = (filePath: string) => {
+    const { openCodeTabs } = this.state
+
+    // Check if file is already open
+    const existingTab = openCodeTabs.find(t => t.filePath === filePath)
+    if (existingTab) {
+      // Just switch to the existing tab
+      this.setState({ activeCodeTab: filePath })
+    } else {
+      // Add new tab and make it active
+      const newTab: IOpenTab = { filePath, hasUnsavedChanges: false }
+      this.setState({
+        openCodeTabs: [...openCodeTabs, newTab],
+        activeCodeTab: filePath,
+      })
+    }
+  }
+
+  private onCodeTabSelect = (filePath: string) => {
+    this.setState({ activeCodeTab: filePath })
+  }
+
+  private onCodeTabClose = (filePath: string) => {
+    const { openCodeTabs, activeCodeTab } = this.state
+    const newTabs = openCodeTabs.filter(t => t.filePath !== filePath)
+
+    let newActiveTab = activeCodeTab
+    if (activeCodeTab === filePath) {
+      // If closing the active tab, switch to the last tab or null
+      newActiveTab = newTabs.length > 0 ? newTabs[newTabs.length - 1].filePath : null
+    }
+
+    this.setState({
+      openCodeTabs: newTabs,
+      activeCodeTab: newActiveTab,
+    })
+  }
+
+  private onCodeTabUnsavedChange = (filePath: string, hasUnsavedChanges: boolean) => {
+    const { openCodeTabs } = this.state
+    const newTabs = openCodeTabs.map(t =>
+      t.filePath === filePath ? { ...t, hasUnsavedChanges } : t
+    )
+    this.setState({ openCodeTabs: newTabs })
+  }
+
   private onIssuesRefresh = () => {
     const { repository } = this.props
     if (isRepositoryWithGitHubRepository(repository)) {
@@ -554,7 +624,9 @@ export class RepositoryView extends React.Component<
   private renderSidebarContents(): JSX.Element {
     const selectedSection = this.props.state.selectedSection
 
-    if (selectedSection === RepositorySectionTab.Changes) {
+    if (selectedSection === RepositorySectionTab.Code) {
+      return this.renderCodeSidebar()
+    } else if (selectedSection === RepositorySectionTab.Changes) {
       return this.renderChangesSidebar()
     } else if (selectedSection === RepositorySectionTab.History) {
       return this.renderCompareSidebar()
@@ -643,6 +715,20 @@ export class RepositoryView extends React.Component<
     return this.props.dispatcher.onHideWhitespaceInChangesDiffChanged(
       hideWhitespaceInDiff,
       this.props.repository
+    )
+  }
+
+  private renderContentForCode(): JSX.Element {
+    return (
+      <CodeViewContent
+        openTabs={this.state.openCodeTabs}
+        activeTab={this.state.activeCodeTab}
+        repositoryPath={this.props.repository.path}
+        emoji={this.props.emoji}
+        onTabSelect={this.onCodeTabSelect}
+        onTabClose={this.onCodeTabClose}
+        onTabUnsavedChange={this.onCodeTabUnsavedChange}
+      />
     )
   }
 
@@ -908,7 +994,9 @@ export class RepositoryView extends React.Component<
 
   private renderContent(): JSX.Element | null {
     const selectedSection = this.props.state.selectedSection
-    if (selectedSection === RepositorySectionTab.Changes) {
+    if (selectedSection === RepositorySectionTab.Code) {
+      return this.renderContentForCode()
+    } else if (selectedSection === RepositorySectionTab.Changes) {
       return this.renderContentForChanges()
     } else if (selectedSection === RepositorySectionTab.History) {
       return this.renderContentForHistory()
@@ -995,7 +1083,9 @@ export class RepositoryView extends React.Component<
 
   private onTabClicked = (tab: Tab) => {
     let section: RepositorySectionTab
-    if (tab === Tab.History) {
+    if (tab === Tab.Code) {
+      section = RepositorySectionTab.Code
+    } else if (tab === Tab.History) {
       section = RepositorySectionTab.History
     } else if (tab === Tab.Tasks) {
       section = RepositorySectionTab.Tasks
@@ -1009,7 +1099,11 @@ export class RepositoryView extends React.Component<
       this.props.repository,
       section
     )
-    if (section !== RepositorySectionTab.Tasks && section !== RepositorySectionTab.Issues) {
+    if (
+      section !== RepositorySectionTab.Tasks &&
+      section !== RepositorySectionTab.Issues &&
+      section !== RepositorySectionTab.Code
+    ) {
       this.props.dispatcher.updateCompareForm(this.props.repository, {
         showBranchList: false,
       })
