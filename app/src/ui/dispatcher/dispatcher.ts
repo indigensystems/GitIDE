@@ -4118,6 +4118,11 @@ export class Dispatcher {
     return this.appStore._setSelectedProject(project)
   }
 
+  /** Set whether the project view is open */
+  public setProjectViewOpen(open: boolean): void {
+    this.appStore._setProjectViewOpen(open)
+  }
+
   /** Load organizations for the current account */
   public loadOrganizations(): Promise<void> {
     return this.appStore._loadOrganizations()

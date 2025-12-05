@@ -414,6 +414,12 @@ export interface IAppState {
   readonly selectedProject: IAPIProjectV2 | null
 
   /**
+   * Whether the project view is open. When true, the main app shows the
+   * project view instead of the repository view.
+   */
+  readonly projectViewOpen: boolean
+
+  /**
    * Filter text for the project dropdown.
    */
   readonly projectFilterText: string

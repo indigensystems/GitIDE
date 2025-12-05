@@ -641,6 +641,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
   /** The currently selected project for task filtering */
   private selectedProject: IAPIProjectV2 | null = null
 
+  /** Whether the project view is open */
+  private projectViewOpen: boolean = false
+
   /** Filter text for the project dropdown */
   private projectFilterText: string = ''
 
@@ -1164,6 +1167,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       ownerFilterText: this.ownerFilterText,
       organizations: this.organizations,
       selectedProject: this.selectedProject,
+      projectViewOpen: this.projectViewOpen,
       projectFilterText: this.projectFilterText,
       ownerProjects: this.ownerProjects,
       ownerRepositories: this.ownerRepositories,
@@ -8842,6 +8846,12 @@ export class AppStore extends TypedBaseStore<IAppState> {
     // Sync the project filter to the tasks store
     await this.tasksStore.setProjectFilter(project?.title ?? null)
 
+    this.emitUpdate()
+  }
+
+  /** Set whether the project view is open */
+  public _setProjectViewOpen(open: boolean): void {
+    this.projectViewOpen = open
     this.emitUpdate()
   }
 

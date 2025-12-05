@@ -433,6 +433,79 @@ export interface IAPIProjectItem {
   readonly fieldValues: ReadonlyArray<IAPIProjectFieldValue>
 }
 
+/** Layout type for a project view */
+export type ProjectViewLayout = 'BOARD_LAYOUT' | 'TABLE_LAYOUT' | 'ROADMAP_LAYOUT'
+
+/** A view (tab) in a GitHub Project V2 */
+export interface IAPIProjectV2View {
+  readonly id: string
+  readonly name: string
+  readonly number: number
+  readonly layout: ProjectViewLayout
+  readonly filter?: string
+  readonly sortBy?: ReadonlyArray<{
+    readonly field: { readonly id: string; readonly name: string }
+    readonly direction: 'ASC' | 'DESC'
+  }>
+  readonly groupBy?: ReadonlyArray<{
+    readonly id: string
+    readonly name: string
+  }>
+  readonly verticalGroupBy?: ReadonlyArray<{
+    readonly id: string
+    readonly name: string
+  }>
+  /** Visible fields in this view (from GitHub's view configuration) */
+  readonly visibleFields?: ReadonlyArray<{
+    readonly id: string
+    readonly name: string
+  }>
+}
+
+/** Content item (issue or draft) in a project */
+export interface IAPIProjectV2ItemContent {
+  readonly type: 'Issue' | 'DraftIssue' | 'PullRequest'
+  readonly id: string
+  readonly title: string
+  readonly number?: number
+  readonly state?: string
+  readonly url?: string
+  readonly repository?: {
+    readonly name: string
+    readonly owner: { readonly login: string }
+  }
+  readonly assignees?: ReadonlyArray<{
+    readonly login: string
+    readonly avatarUrl: string
+  }>
+  readonly labels?: ReadonlyArray<{
+    readonly name: string
+    readonly color: string
+  }>
+  readonly issueType?: {
+    readonly name: string
+  }
+}
+
+/** Full item in a project with content */
+export interface IAPIProjectV2ItemWithContent {
+  readonly id: string
+  readonly isArchived: boolean
+  readonly fieldValues: ReadonlyArray<IAPIProjectFieldValue>
+  readonly content: IAPIProjectV2ItemContent | null
+}
+
+/** Full project details with views and items */
+export interface IAPIProjectV2Details {
+  readonly id: string
+  readonly number: number
+  readonly title: string
+  readonly url: string
+  readonly fields: ReadonlyArray<IAPIProjectField>
+  readonly views: ReadonlyArray<IAPIProjectV2View>
+  readonly items: ReadonlyArray<IAPIProjectV2ItemWithContent>
+}
+
 /** The combined state of a ref. */
 export type APIRefState = 'failure' | 'pending' | 'success' | 'error'
 
@@ -1819,6 +1892,394 @@ export class API {
     }
 
     return []
+  }
+
+  /**
+   * Fetch full project details including views, fields, and items.
+   * Uses the project's global ID to query for all data.
+   */
+  public async fetchProjectDetails(
+    projectId: string
+  ): Promise<IAPIProjectV2Details | null> {
+    const query = `
+      query($id: ID!) {
+        node(id: $id) {
+          ... on ProjectV2 {
+            id
+            number
+            title
+            url
+            views(first: 20) {
+              nodes {
+                id
+                name
+                number
+                layout
+                filter
+                fields(first: 30) {
+                  nodes {
+                    ... on ProjectV2Field {
+                      id
+                      name
+                    }
+                    ... on ProjectV2SingleSelectField {
+                      id
+                      name
+                    }
+                    ... on ProjectV2IterationField {
+                      id
+                      name
+                    }
+                  }
+                }
+                sortByFields(first: 5) {
+                  nodes {
+                    field {
+                      ... on ProjectV2Field {
+                        id
+                        name
+                      }
+                      ... on ProjectV2SingleSelectField {
+                        id
+                        name
+                      }
+                    }
+                    direction
+                  }
+                }
+                groupByFields(first: 5) {
+                  nodes {
+                    ... on ProjectV2Field {
+                      id
+                      name
+                    }
+                    ... on ProjectV2SingleSelectField {
+                      id
+                      name
+                    }
+                  }
+                }
+                verticalGroupByFields(first: 5) {
+                  nodes {
+                    ... on ProjectV2Field {
+                      id
+                      name
+                    }
+                    ... on ProjectV2SingleSelectField {
+                      id
+                      name
+                    }
+                  }
+                }
+              }
+            }
+            fields(first: 30) {
+              nodes {
+                ... on ProjectV2Field {
+                  id
+                  name
+                  dataType
+                }
+                ... on ProjectV2SingleSelectField {
+                  id
+                  name
+                  dataType
+                  options {
+                    id
+                    name
+                    color
+                    description
+                  }
+                }
+                ... on ProjectV2IterationField {
+                  id
+                  name
+                  dataType
+                  configuration {
+                    iterations {
+                      id
+                      title
+                      startDate
+                      duration
+                    }
+                    completedIterations {
+                      id
+                      title
+                      startDate
+                      duration
+                    }
+                  }
+                }
+              }
+            }
+            items(first: 100) {
+              nodes {
+                id
+                isArchived
+                content {
+                  ... on Issue {
+                    __typename
+                    id
+                    title
+                    number
+                    state
+                    url
+                    repository {
+                      name
+                      owner {
+                        login
+                      }
+                    }
+                    assignees(first: 5) {
+                      nodes {
+                        login
+                        avatarUrl
+                      }
+                    }
+                    labels(first: 10) {
+                      nodes {
+                        name
+                        color
+                      }
+                    }
+                    issueType {
+                      name
+                    }
+                  }
+                  ... on DraftIssue {
+                    __typename
+                    id: id
+                    title
+                  }
+                  ... on PullRequest {
+                    __typename
+                    id
+                    title
+                    number
+                    state
+                    url
+                    repository {
+                      name
+                      owner {
+                        login
+                      }
+                    }
+                    assignees(first: 5) {
+                      nodes {
+                        login
+                        avatarUrl
+                      }
+                    }
+                    labels(first: 10) {
+                      nodes {
+                        name
+                        color
+                      }
+                    }
+                  }
+                }
+                fieldValues(first: 30) {
+                  nodes {
+                    ... on ProjectV2ItemFieldSingleSelectValue {
+                      __typename
+                      field {
+                        ... on ProjectV2SingleSelectField {
+                          id
+                          name
+                        }
+                      }
+                      name
+                      optionId
+                    }
+                    ... on ProjectV2ItemFieldNumberValue {
+                      __typename
+                      field {
+                        ... on ProjectV2Field {
+                          id
+                          name
+                        }
+                      }
+                      number
+                    }
+                    ... on ProjectV2ItemFieldTextValue {
+                      __typename
+                      field {
+                        ... on ProjectV2Field {
+                          id
+                          name
+                        }
+                      }
+                      text
+                    }
+                    ... on ProjectV2ItemFieldDateValue {
+                      __typename
+                      field {
+                        ... on ProjectV2Field {
+                          id
+                          name
+                        }
+                      }
+                      date
+                    }
+                    ... on ProjectV2ItemFieldIterationValue {
+                      __typename
+                      field {
+                        ... on ProjectV2IterationField {
+                          id
+                          name
+                        }
+                      }
+                      iterationId
+                      title
+                      startDate
+                      duration
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `
+
+    try {
+      const response = await this.ghRequest('POST', '/graphql', {
+        body: { query, variables: { id: projectId } },
+      })
+      if (response === null) {
+        return null
+      }
+
+      const json = await response.json()
+      const project = json.data?.node
+      if (!project) {
+        return null
+      }
+
+      const mapFieldValue = (fv: any): IAPIProjectFieldValue | null => {
+        if (!fv.__typename || !fv.field) {
+          return null
+        }
+        switch (fv.__typename) {
+          case 'ProjectV2ItemFieldSingleSelectValue':
+            return {
+              type: 'singleSelect',
+              field: { name: fv.field.name },
+              name: fv.name,
+              optionId: fv.optionId,
+            }
+          case 'ProjectV2ItemFieldNumberValue':
+            return {
+              type: 'number',
+              field: { name: fv.field.name },
+              number: fv.number,
+            }
+          case 'ProjectV2ItemFieldTextValue':
+            return {
+              type: 'text',
+              field: { name: fv.field.name },
+              text: fv.text,
+            }
+          case 'ProjectV2ItemFieldDateValue':
+            return {
+              type: 'date',
+              field: { name: fv.field.name },
+              date: fv.date,
+            }
+          case 'ProjectV2ItemFieldIterationValue':
+            return {
+              type: 'iteration',
+              field: { name: fv.field.name },
+              title: fv.title,
+              iterationId: fv.iterationId,
+              startDate: fv.startDate,
+              duration: fv.duration,
+            }
+          default:
+            return null
+        }
+      }
+
+      const mapContent = (c: any): IAPIProjectV2ItemContent | null => {
+        if (!c || !c.__typename) {
+          return null
+        }
+        return {
+          type: c.__typename as 'Issue' | 'DraftIssue' | 'PullRequest',
+          id: c.id,
+          title: c.title,
+          number: c.number,
+          state: c.state,
+          url: c.url,
+          repository: c.repository
+            ? {
+                name: c.repository.name,
+                owner: { login: c.repository.owner.login },
+              }
+            : undefined,
+          assignees: c.assignees?.nodes?.map((a: any) => ({
+            login: a.login,
+            avatarUrl: a.avatarUrl,
+          })),
+          labels: c.labels?.nodes?.map((l: any) => ({
+            name: l.name,
+            color: l.color,
+          })),
+          issueType: c.issueType ? { name: c.issueType.name } : undefined,
+        }
+      }
+
+      return {
+        id: project.id,
+        number: project.number,
+        title: project.title,
+        url: project.url,
+        fields: (project.fields?.nodes ?? []).map((f: any) => ({
+          id: f.id,
+          name: f.name,
+          dataType: f.dataType,
+          options: f.options,
+          configuration: f.configuration,
+        })),
+        views: (project.views?.nodes ?? []).map((v: any) => ({
+          id: v.id,
+          name: v.name,
+          number: v.number,
+          layout: v.layout as ProjectViewLayout,
+          filter: v.filter,
+          visibleFields: v.fields?.nodes
+            ?.filter((f: any) => f.id && f.name)
+            .map((f: any) => ({
+              id: f.id,
+              name: f.name,
+            })),
+          sortBy: v.sortByFields?.nodes?.map((s: any) => ({
+            field: { id: s.field?.id, name: s.field?.name },
+            direction: s.direction,
+          })),
+          groupBy: v.groupByFields?.nodes?.map((g: any) => ({
+            id: g.id,
+            name: g.name,
+          })),
+          verticalGroupBy: v.verticalGroupByFields?.nodes?.map((g: any) => ({
+            id: g.id,
+            name: g.name,
+          })),
+        })),
+        items: (project.items?.nodes ?? []).map((item: any) => ({
+          id: item.id,
+          isArchived: item.isArchived,
+          content: mapContent(item.content),
+          fieldValues: (item.fieldValues?.nodes ?? [])
+            .map(mapFieldValue)
+            .filter((fv: any) => fv !== null),
+        })),
+      }
+    } catch (e) {
+      log.warn(`fetchProjectDetails: failed to fetch project ${projectId}`, e)
+      return null
+    }
   }
 
   /**

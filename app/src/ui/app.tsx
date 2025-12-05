@@ -92,6 +92,7 @@ import { Publish } from './publish-repository'
 import { Acknowledgements } from './acknowledgements'
 import { UntrustedCertificate } from './untrusted-certificate'
 import { NoRepositoriesView } from './no-repositories'
+import { ProjectView } from './project-view/project-view'
 import { ConfirmRemoveRepository } from './remove-repository'
 import { TermsAndConditions } from './terms-and-conditions'
 import { PushBranchCommits } from './branches'
@@ -2904,11 +2905,39 @@ export class App extends React.Component<IAppProps, IAppState> {
       >
         {this.renderToolbar()}
         {this.renderBanner()}
-        {this.renderRepository()}
+        {this.state.projectViewOpen && this.state.selectedProject
+          ? this.renderProjectView()
+          : this.renderRepository()}
         {this.renderPopups()}
         {this.renderDragElement()}
       </div>
     )
+  }
+
+  private renderProjectView() {
+    const { selectedProject } = this.state
+    if (!selectedProject) {
+      return null
+    }
+
+    // Get the first available GitHub.com account (the user who can access the organization)
+    const account = this.state.accounts[0]
+    if (!account) {
+      return null
+    }
+
+    return (
+      <ProjectView
+        dispatcher={this.props.dispatcher}
+        project={selectedProject}
+        account={account}
+        onClose={this.onCloseProjectView}
+      />
+    )
+  }
+
+  private onCloseProjectView = () => {
+    this.props.dispatcher.setProjectViewOpen(false)
   }
 
   private getLocalRepositoryInfos = (): ReadonlyArray<ILocalRepoInfo> => {
@@ -3680,6 +3709,8 @@ export class App extends React.Component<IAppProps, IAppState> {
   private onProjectSelected = (project: IAPIProjectV2 | null) => {
     this.props.dispatcher.setSelectedProject(project)
     this.props.dispatcher.closeFoldout(FoldoutType.Project)
+    // Open project view when a project is selected, close when "All Projects" is selected
+    this.props.dispatcher.setProjectViewOpen(project !== null)
   }
 
   private onProjectDropdownStateChanged = (
