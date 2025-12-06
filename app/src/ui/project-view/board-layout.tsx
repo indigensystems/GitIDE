@@ -18,6 +18,7 @@ interface IBoardLayoutProps {
     newStatusOptionId: string,
     newStatusName: string
   ) => void
+  readonly onAddIssue?: (statusOptionId: string, statusName: string) => void
 }
 
 interface IBoardLayoutState {
@@ -412,6 +413,15 @@ export class BoardLayout extends React.Component<IBoardLayoutProps, IBoardLayout
     )
   }
 
+  private onAddIssueClick = (e: React.MouseEvent, column: IColumn) => {
+    e.stopPropagation()
+    e.preventDefault()
+    console.log('[BoardLayout] Add issue clicked for column:', column.name, column.id)
+    if (this.props.onAddIssue && column.id !== 'no-status') {
+      this.props.onAddIssue(column.id, column.name)
+    }
+  }
+
   private renderColumn(column: IColumn) {
     const colorClass = this.getColumnColorClass(column.color)
     const isDragOver = this.state.dragOverColumnId === column.id
@@ -421,6 +431,8 @@ export class BoardLayout extends React.Component<IBoardLayoutProps, IBoardLayout
 
     // Sort items by saved order
     const sortedItems = this.sortItemsByOrder(column.items, column.id)
+
+    const showAddButton = this.props.onAddIssue && column.id !== 'no-status'
 
     return (
       <div
@@ -434,6 +446,15 @@ export class BoardLayout extends React.Component<IBoardLayoutProps, IBoardLayout
           <span className={`column-indicator ${colorClass}`} />
           <span className="column-name">{column.name}</span>
           <span className="column-count">{column.items.length}</span>
+          {showAddButton && (
+            <button
+              className="column-add-button"
+              onClick={(e) => this.onAddIssueClick(e, column)}
+              title={`Add issue to ${column.name}`}
+            >
+              <Octicon symbol={octicons.plus} />
+            </button>
+          )}
         </div>
         <div className="column-content">
           {sortedItems.map(item => this.renderCard(item, column))}

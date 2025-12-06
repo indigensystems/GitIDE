@@ -5,10 +5,14 @@ import {
   IAPIProjectV2Details,
   IAPIProjectV2View,
   IAPIProjectV2ItemWithContent,
+  IAPIIdentity,
+  IAPILabel,
+  IAPIMilestone,
   ProjectViewLayout,
 } from '../../lib/api'
 import { Account } from '../../models/account'
 import { API } from '../../lib/api'
+import { Repository } from '../../models/repository'
 import { BoardLayout } from './board-layout'
 import { TableLayout } from './table-layout'
 import { ViewOptionsDropdown } from './view-options-dropdown'
@@ -16,6 +20,8 @@ import { applyFilter } from './filter-utils'
 import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
 import { IssueDetailView, IIssueInfo } from '../tasks/issue-detail-view'
+import { CreateTaskDialog } from '../tasks/create-task-dialog'
+import { DialogStackContext } from '../dialog'
 import { shell } from 'electron'
 
 const ViewOrderStorageKey = 'project-view-tab-order'
@@ -24,6 +30,7 @@ interface IProjectViewProps {
   readonly dispatcher: Dispatcher
   readonly project: IAPIProjectV2
   readonly account: Account
+  readonly repository: Repository | null
   readonly onClose: () => void
 }
 
@@ -36,6 +43,11 @@ interface IProjectViewState {
   readonly draggedViewId: string | null
   readonly dragOverViewId: string | null
   readonly selectedItem: IAPIProjectV2ItemWithContent | null
+  readonly showCreateDialog: boolean
+  readonly createDialogInitialStatusId: string | undefined
+  readonly collaborators: ReadonlyArray<IAPIIdentity>
+  readonly labels: ReadonlyArray<IAPILabel>
+  readonly milestones: ReadonlyArray<IAPIMilestone>
 }
 
 export class ProjectView extends React.Component<
@@ -53,6 +65,11 @@ export class ProjectView extends React.Component<
       draggedViewId: null,
       dragOverViewId: null,
       selectedItem: null,
+      showCreateDialog: false,
+      createDialogInitialStatusId: undefined,
+      collaborators: [],
+      labels: [],
+      milestones: [],
     }
   }
 
@@ -301,6 +318,133 @@ export class ProjectView extends React.Component<
     }
   }
 
+  private onAddIssue = (statusOptionId: string, statusName: string) => {
+    console.log('[ProjectView] onAddIssue called:', statusOptionId, statusName)
+    console.log('[ProjectView] repository:', this.props.repository)
+    this.setState({
+      showCreateDialog: true,
+      createDialogInitialStatusId: statusOptionId,
+    })
+  }
+
+  private onCloseCreateDialog = () => {
+    this.setState({
+      showCreateDialog: false,
+      createDialogInitialStatusId: undefined,
+    })
+  }
+
+  private onLoadCreateDialogMetadata = async () => {
+    const { repository, account } = this.props
+    if (!repository?.gitHubRepository) {
+      return
+    }
+
+    const api = API.fromAccount(account)
+    const ghRepo = repository.gitHubRepository
+    const owner = ghRepo.owner.login
+    const name = ghRepo.name
+
+    try {
+      const [collaborators, labels, milestones] = await Promise.all([
+        api.fetchCollaborators(owner, name),
+        api.fetchLabels(owner, name),
+        api.fetchMilestones(owner, name),
+      ])
+
+      this.setState({
+        collaborators: collaborators || [],
+        labels: labels || [],
+        milestones: milestones || [],
+      })
+    } catch (e) {
+      console.error('Failed to load repository metadata:', e)
+    }
+  }
+
+  private onCreateTask = async (
+    title: string,
+    body: string,
+    assignees: ReadonlyArray<string>,
+    labels: ReadonlyArray<string>,
+    milestone: number | undefined,
+    _projectId: string | undefined,
+    statusOptionId: string | undefined,
+    iterationId: string | undefined
+  ) => {
+    const { repository, account, project } = this.props
+    const { projectDetails } = this.state
+
+    if (!repository?.gitHubRepository || !projectDetails) {
+      throw new Error('Repository or project details not available')
+    }
+
+    const api = API.fromAccount(account)
+    const ghRepo = repository.gitHubRepository
+    const owner = ghRepo.owner.login
+    const name = ghRepo.name
+
+    // 1. Create the issue in the repository
+    const issue = await api.createIssue(
+      owner,
+      name,
+      title,
+      body,
+      assignees,
+      labels,
+      milestone
+    )
+
+    if (!issue) {
+      throw new Error('Failed to create issue')
+    }
+
+    // 2. Get the issue's node ID for GraphQL operations
+    const issueNodeId = await api.fetchIssueNodeId(owner, name, issue.number)
+    if (!issueNodeId) {
+      throw new Error('Failed to get issue node ID')
+    }
+
+    // 3. Add the issue to the project
+    const projectItemId = await api.addIssueToProject(project.id, issueNodeId)
+    if (!projectItemId) {
+      throw new Error('Failed to add issue to project')
+    }
+
+    // 4. Set the status if specified
+    if (statusOptionId) {
+      const statusField = projectDetails.fields.find(f => f.name === 'Status')
+      if (statusField) {
+        await api.updateProjectItemField(
+          project.id,
+          projectItemId,
+          statusField.id,
+          'SINGLE_SELECT',
+          statusOptionId
+        )
+      }
+    }
+
+    // 5. Set the iteration if specified
+    if (iterationId) {
+      const iterationField = projectDetails.fields.find(
+        f => f.dataType === 'ITERATION'
+      )
+      if (iterationField) {
+        await api.updateProjectItemField(
+          project.id,
+          projectItemId,
+          iterationField.id,
+          'ITERATION',
+          iterationId
+        )
+      }
+    }
+
+    // 6. Refresh the project to show the new item
+    await this.loadProjectDetails()
+  }
+
   private onCloseModal = () => {
     this.setState({ selectedItem: null })
   }
@@ -544,6 +688,7 @@ export class ProjectView extends React.Component<
             groupByField={selectedView.groupBy?.[0]}
             onCardClick={this.onCardClick}
             onStatusChange={this.onStatusChange}
+            onAddIssue={this.onAddIssue}
           />
         )
       case 'TABLE_LAYOUT':
@@ -583,6 +728,72 @@ export class ProjectView extends React.Component<
     )
   }
 
+  private renderCreateDialog() {
+    const { showCreateDialog, createDialogInitialStatusId, projectDetails, collaborators, labels, milestones } = this.state
+    const { repository, project } = this.props
+
+    console.log('[ProjectView] renderCreateDialog - showCreateDialog:', showCreateDialog, 'repository:', repository?.gitHubRepository?.fullName)
+
+    if (!showCreateDialog || !repository?.gitHubRepository) {
+      return null
+    }
+
+    const ghRepo = repository.gitHubRepository
+
+    // Build projects array with fields for status dropdown
+    const projects: IAPIProjectV2[] = projectDetails ? [{
+      id: project.id,
+      number: project.number,
+      title: project.title,
+      url: project.url,
+      fields: projectDetails.fields,
+    }] : []
+
+    // Find the current iteration to pre-select
+    let initialIterationId: string | undefined
+    if (projectDetails) {
+      const iterationField = projectDetails.fields.find(f => f.dataType === 'ITERATION')
+      if (iterationField?.configuration?.iterations) {
+        const now = new Date()
+        const currentIteration = iterationField.configuration.iterations.find(iter => {
+          const start = new Date(iter.startDate)
+          const durationDays = iter.duration
+          const end = new Date(start)
+          end.setDate(end.getDate() + durationDays)
+          return now >= start && now <= end
+        })
+        initialIterationId = currentIteration?.id
+      }
+    }
+
+    console.log('[ProjectView] RENDERING CreateTaskDialog with:', {
+      owner: ghRepo.owner.login,
+      repoName: ghRepo.name,
+      initialProjectId: project.id,
+      initialStatusOptionId: createDialogInitialStatusId,
+      initialIterationId,
+    })
+
+    return (
+      <DialogStackContext.Provider value={{ isTopMost: true }}>
+        <CreateTaskDialog
+          owner={ghRepo.owner.login}
+          repoName={ghRepo.name}
+          collaborators={collaborators}
+          labels={labels}
+          milestones={milestones}
+          projects={projects}
+          onDismissed={this.onCloseCreateDialog}
+          onLoad={this.onLoadCreateDialogMetadata}
+          onCreateTask={this.onCreateTask}
+          initialProjectId={project.id}
+          initialStatusOptionId={createDialogInitialStatusId}
+          initialIterationId={initialIterationId}
+        />
+      </DialogStackContext.Provider>
+    )
+  }
+
   public render() {
     return (
       <div className="project-view">
@@ -592,6 +803,7 @@ export class ProjectView extends React.Component<
           {this.renderViewContent()}
         </div>
         {this.renderIssueModal()}
+        {this.renderCreateDialog()}
       </div>
     )
   }

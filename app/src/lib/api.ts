@@ -2657,6 +2657,96 @@ export class API {
   }
 
   /**
+   * Add a draft issue to a project.
+   * Returns the new item ID and item data if successful.
+   */
+  public async addProjectDraftIssue(
+    projectId: string,
+    title: string,
+    body?: string
+  ): Promise<{ itemId: string; item: IAPIProjectV2ItemWithContent } | null> {
+    const mutation = `
+      mutation($projectId: ID!, $title: String!, $body: String) {
+        addProjectV2DraftIssue(input: { projectId: $projectId, title: $title, body: $body }) {
+          projectItem {
+            id
+            content {
+              ... on DraftIssue {
+                __typename
+                id
+                title
+                body
+              }
+            }
+            fieldValues(first: 20) {
+              nodes {
+                ... on ProjectV2ItemFieldSingleSelectValue {
+                  field { ... on ProjectV2SingleSelectField { name } }
+                  optionId
+                  name
+                }
+              }
+            }
+          }
+        }
+      }
+    `
+
+    try {
+      const response = await this.ghRequest('POST', '/graphql', {
+        body: {
+          query: mutation,
+          variables: { projectId, title, body: body || '' },
+        },
+      })
+      if (response === null) {
+        return null
+      }
+
+      const json = await response.json()
+      // eslint-disable-next-line no-console
+      console.log(`[addProjectDraftIssue] response:`, json)
+
+      if (json.errors && json.errors.length > 0) {
+        for (const error of json.errors) {
+          // eslint-disable-next-line no-console
+          console.error(`[addProjectDraftIssue] GraphQL error:`, error.message)
+        }
+        return null
+      }
+
+      const projectItem = json.data?.addProjectV2DraftIssue?.projectItem
+      if (!projectItem) {
+        return null
+      }
+
+      // Transform the response into our expected format
+      const item: IAPIProjectV2ItemWithContent = {
+        id: projectItem.id,
+        isArchived: false,
+        content: projectItem.content ? {
+          type: 'DraftIssue',
+          id: projectItem.content.id,
+          title: projectItem.content.title,
+        } : null,
+        fieldValues: (projectItem.fieldValues?.nodes || [])
+          .filter((n: any) => n && n.field)
+          .map((n: any) => ({
+            type: 'singleSelect' as const,
+            field: { name: n.field.name },
+            optionId: n.optionId,
+            name: n.name,
+          })),
+      }
+
+      return { itemId: projectItem.id, item }
+    } catch (e) {
+      log.warn('addProjectDraftIssue: failed', e)
+      return null
+    }
+  }
+
+  /**
    * Get the node ID for an issue (needed for GraphQL mutations).
    */
   public async fetchIssueNodeId(

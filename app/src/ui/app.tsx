@@ -2914,7 +2914,7 @@ export class App extends React.Component<IAppProps, IAppState> {
   }
 
   private renderProjectView() {
-    const { selectedProject } = this.state
+    const { selectedProject, selectedState } = this.state
     if (!selectedProject) {
       return null
     }
@@ -2925,11 +2925,17 @@ export class App extends React.Component<IAppProps, IAppState> {
       return null
     }
 
+    // Get the currently selected repository, if any
+    const repository = selectedState?.type === SelectionType.Repository
+      ? selectedState.repository
+      : null
+
     return (
       <ProjectView
         dispatcher={this.props.dispatcher}
         project={selectedProject}
         account={account}
+        repository={repository}
         onClose={this.onCloseProjectView}
       />
     )

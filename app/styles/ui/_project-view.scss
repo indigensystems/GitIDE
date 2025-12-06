@@ -223,6 +223,28 @@
       font-size: var(--font-size-xs);
       color: var(--text-secondary-color);
     }
+
+    .column-add-button {
+      background: none;
+      border: none;
+      padding: 4px;
+      cursor: pointer;
+      color: var(--text-secondary-color);
+      border-radius: var(--border-radius);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.6;
+      transition: opacity 0.15s ease, background-color 0.15s ease;
+      position: relative;
+      z-index: 10;
+
+      &:hover {
+        background-color: var(--box-alt-background-color);
+        color: var(--text-color);
+        opacity: 1;
+      }
+    }
   }
 
   .column-content {

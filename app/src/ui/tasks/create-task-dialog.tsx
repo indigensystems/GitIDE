@@ -47,8 +47,18 @@ interface ICreateTaskDialogProps {
     labels: ReadonlyArray<string>,
     milestone: number | undefined,
     projectId: string | undefined,
-    statusOptionId: string | undefined
+    statusOptionId: string | undefined,
+    iterationId: string | undefined
   ) => Promise<void>
+
+  /** Initial project ID to pre-select */
+  readonly initialProjectId?: string
+
+  /** Initial status option ID to pre-select */
+  readonly initialStatusOptionId?: string
+
+  /** Initial iteration ID to pre-select */
+  readonly initialIterationId?: string
 }
 
 interface ICreateTaskDialogState {
@@ -59,12 +69,14 @@ interface ICreateTaskDialogState {
   readonly selectedMilestone: number | undefined
   readonly selectedProjectId: string | undefined
   readonly selectedStatusOptionId: string | undefined
+  readonly selectedIterationId: string | undefined
   readonly isCreating: boolean
   readonly showAssigneeDropdown: boolean
   readonly showLabelDropdown: boolean
   readonly showMilestoneDropdown: boolean
   readonly showProjectDropdown: boolean
   readonly showStatusDropdown: boolean
+  readonly showIterationDropdown: boolean
 }
 
 export class CreateTaskDialog extends React.Component<
@@ -79,14 +91,16 @@ export class CreateTaskDialog extends React.Component<
       selectedAssignees: new Set(),
       selectedLabels: new Set(),
       selectedMilestone: undefined,
-      selectedProjectId: undefined,
-      selectedStatusOptionId: undefined,
+      selectedProjectId: props.initialProjectId,
+      selectedStatusOptionId: props.initialStatusOptionId,
+      selectedIterationId: props.initialIterationId,
       isCreating: false,
       showAssigneeDropdown: false,
       showLabelDropdown: false,
       showMilestoneDropdown: false,
       showProjectDropdown: false,
       showStatusDropdown: false,
+      showIterationDropdown: false,
     }
   }
 
@@ -154,6 +168,7 @@ export class CreateTaskDialog extends React.Component<
       selectedMilestone,
       selectedProjectId,
       selectedStatusOptionId,
+      selectedIterationId,
     } = this.state
 
     if (title.trim().length === 0) {
@@ -170,7 +185,8 @@ export class CreateTaskDialog extends React.Component<
         Array.from(selectedLabels),
         selectedMilestone,
         selectedProjectId,
-        selectedStatusOptionId
+        selectedStatusOptionId,
+        selectedIterationId
       )
       this.props.onDismissed()
     } catch (error) {
@@ -227,6 +243,25 @@ export class CreateTaskDialog extends React.Component<
       showLabelDropdown: false,
       showMilestoneDropdown: false,
       showProjectDropdown: false,
+      showIterationDropdown: false,
+    })
+  }
+
+  private toggleIterationDropdown = () => {
+    this.setState({
+      showIterationDropdown: !this.state.showIterationDropdown,
+      showAssigneeDropdown: false,
+      showLabelDropdown: false,
+      showMilestoneDropdown: false,
+      showProjectDropdown: false,
+      showStatusDropdown: false,
+    })
+  }
+
+  private selectIteration = (iterationId: string | undefined) => {
+    this.setState({
+      selectedIterationId: iterationId,
+      showIterationDropdown: false,
     })
   }
 
@@ -524,6 +559,77 @@ export class CreateTaskDialog extends React.Component<
     return colorMap[color.toUpperCase()] || '#8b949e'
   }
 
+  private renderIterationSelector() {
+    const { projects } = this.props
+    const { selectedProjectId, selectedIterationId, showIterationDropdown } = this.state
+
+    // Find the selected project
+    const project = projects.find(p => p.id === selectedProjectId)
+    if (!project) {
+      return null
+    }
+
+    // Find the iteration field
+    const iterationField = project.fields.find(f => f.dataType === 'ITERATION')
+    if (!iterationField?.configuration?.iterations) {
+      return null
+    }
+
+    // Combine active and completed iterations
+    const allIterations = [
+      ...(iterationField.configuration.iterations || []),
+      ...(iterationField.configuration.completedIterations || []),
+    ]
+
+    if (allIterations.length === 0) {
+      return null
+    }
+
+    const currentIteration = allIterations.find(i => i.id === selectedIterationId)
+
+    return (
+      <div className="task-metadata-selector">
+        <button
+          type="button"
+          className="selector-button"
+          onClick={this.toggleIterationDropdown}
+        >
+          <Octicon symbol={octicons.iterations} />
+          <span>{currentIteration?.title ?? 'Iteration'}</span>
+          <Octicon symbol={octicons.triangleDown} />
+        </button>
+        {showIterationDropdown && (
+          <div className="selector-dropdown">
+            <button
+              type="button"
+              className={classNames('dropdown-item', {
+                selected: selectedIterationId === undefined,
+              })}
+              onClick={() => this.selectIteration(undefined)}
+            >
+              <span>No iteration</span>
+            </button>
+            {allIterations.map(iteration => (
+              <button
+                key={iteration.id}
+                type="button"
+                className={classNames('dropdown-item', {
+                  selected: selectedIterationId === iteration.id,
+                })}
+                onClick={() => this.selectIteration(iteration.id)}
+              >
+                <span>{iteration.title}</span>
+                {selectedIterationId === iteration.id && (
+                  <Octicon symbol={octicons.check} />
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   private renderSelectedItems() {
     const { selectedAssignees, selectedLabels } = this.state
     const { collaborators, labels } = this.props
@@ -619,6 +725,7 @@ export class CreateTaskDialog extends React.Component<
           <Row className="metadata-selectors">
             {this.renderProjectSelector()}
             {this.renderStatusSelector()}
+            {this.renderIterationSelector()}
           </Row>
 
           {this.renderSelectedItems()}
