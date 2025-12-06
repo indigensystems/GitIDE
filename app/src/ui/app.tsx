@@ -45,6 +45,7 @@ import { CloneRepositoryTab } from '../models/clone-repository-tab'
 import { CloningRepository } from '../models/cloning-repository'
 
 import { TitleBar, ZoomInfo, FullScreenInfo } from './window'
+import { Button } from './lib/button'
 
 import { RepositoriesList } from './repositories-list'
 import { RepositoryView } from './repository'
@@ -79,7 +80,7 @@ import { Preferences } from './preferences'
 import { RepositorySettings } from './repository-settings'
 import { AppError } from './app-error'
 import { MissingRepository } from './missing-repository'
-import { AddExistingRepository, CreateRepository } from './add-repository'
+import { AddExistingRepository, CreateRepository, AddRepositoryDialog } from './add-repository'
 import { CloneRepository } from './clone-repository'
 import { CloneableRepositoryFilterList } from './clone-repository/cloneable-repository-filter-list'
 import { ILocalRepoInfo } from './clone-repository/group-repositories'
@@ -2622,6 +2623,18 @@ export class App extends React.Component<IAppProps, IAppState> {
           />
         )
       }
+      case PopupType.AddRepositoryDialog: {
+        return (
+          <AddRepositoryDialog
+            key="add-repository-dialog"
+            dispatcher={this.props.dispatcher}
+            onDismissed={onPopupDismissedFn}
+            initialTab={popup.initialTab}
+            accounts={this.state.accounts}
+            isTopMost={isTopMost}
+          />
+        )
+      }
       default:
         return assertNever(popup, `Unknown popup type: ${popup}`)
     }
@@ -3022,6 +3035,7 @@ export class App extends React.Component<IAppProps, IAppState> {
           onCloneRepository={this.onCloneAPIRepository}
           onLocateRepository={this.onLocateRepository}
           onAddExistingRepository={this.onAddExistingRepository}
+          renderPreFilter={this.renderNewRepositoryButton}
         />
       )
     }
@@ -3049,6 +3063,24 @@ export class App extends React.Component<IAppProps, IAppState> {
         dispatcher={this.props.dispatcher}
       />
     )
+  }
+
+  private renderNewRepositoryButton = (): JSX.Element => {
+    return (
+      <Button
+        className="new-repository-button"
+        onClick={this.showAddRepositoryDialog}
+        tooltip="Add repository"
+      >
+        <Octicon symbol={octicons.plus} />
+      </Button>
+    )
+  }
+
+  private showAddRepositoryDialog = () => {
+    this.props.dispatcher.showPopup({
+      type: PopupType.AddRepositoryDialog,
+    })
   }
 
   private onAPIRepositorySelectionChanged = (repo: IAPIRepository | null) => {

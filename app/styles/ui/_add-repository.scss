@@ -26,6 +26,17 @@ dialog.clone-repository {
     }
   }
 
+  .new-repository-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 30px;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    flex-shrink: 0;
+  }
+
   // Style the list-item wrapper when it contains a group header
   .list-item:has(.clone-repository-list-group-header) {
     background-color: var(--box-alt-background-color);
