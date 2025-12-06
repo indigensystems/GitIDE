@@ -31,6 +31,10 @@ interface ICodeViewSidebarState {
   readonly creatingType: 'file' | 'folder' | null
   /** The input value for the new item name */
   readonly newItemName: string
+  /** Path of item being dragged */
+  readonly draggingPath: string | null
+  /** Path of folder being hovered over during drag */
+  readonly dropTargetPath: string | null
 }
 
 export class CodeViewSidebar extends React.Component<
@@ -47,6 +51,8 @@ export class CodeViewSidebar extends React.Component<
       isLoading: true,
       creatingType: null,
       newItemName: '',
+      draggingPath: null,
+      dropTargetPath: null,
     }
   }
 
@@ -239,6 +245,100 @@ export class CodeViewSidebar extends React.Component<
     }
   }
 
+  // Drag and drop handlers
+  private onDragStart = (node: IFileTreeNode, e: React.DragEvent<HTMLDivElement>) => {
+    e.dataTransfer.setData('text/plain', node.path)
+    e.dataTransfer.effectAllowed = 'move'
+    this.setState({ draggingPath: node.path })
+  }
+
+  private onDragEnd = () => {
+    this.setState({ draggingPath: null, dropTargetPath: null })
+  }
+
+  private onDragOver = (node: IFileTreeNode, e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    // Only allow dropping on directories
+    if (!node.isDirectory) {
+      e.dataTransfer.dropEffect = 'none'
+      return
+    }
+
+    // Don't allow dropping on itself or its children
+    const { draggingPath } = this.state
+    if (draggingPath && (node.path === draggingPath || node.path.startsWith(draggingPath + Path.sep))) {
+      e.dataTransfer.dropEffect = 'none'
+      return
+    }
+
+    e.dataTransfer.dropEffect = 'move'
+    if (this.state.dropTargetPath !== node.path) {
+      this.setState({ dropTargetPath: node.path })
+    }
+  }
+
+  private onDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    // Only clear if we're leaving the drop target (not entering a child)
+    const relatedTarget = e.relatedTarget as HTMLElement
+    if (!relatedTarget || !e.currentTarget.contains(relatedTarget)) {
+      this.setState({ dropTargetPath: null })
+    }
+  }
+
+  private onDrop = async (targetNode: IFileTreeNode, e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    const sourcePath = e.dataTransfer.getData('text/plain')
+    if (!sourcePath || !targetNode.isDirectory) {
+      this.setState({ draggingPath: null, dropTargetPath: null })
+      return
+    }
+
+    // Don't drop on itself or parent
+    if (sourcePath === targetNode.path || Path.dirname(sourcePath) === targetNode.path) {
+      this.setState({ draggingPath: null, dropTargetPath: null })
+      return
+    }
+
+    const fileName = Path.basename(sourcePath)
+    const destPath = Path.join(targetNode.path, fileName)
+
+    try {
+      await fs.promises.rename(sourcePath, destPath)
+      this.refreshFileTree()
+    } catch (err) {
+      console.error('Failed to move file:', err)
+    }
+
+    this.setState({ draggingPath: null, dropTargetPath: null })
+  }
+
+  // Delete handler
+  private onDeleteNode = async (node: IFileTreeNode) => {
+    const confirmMessage = node.isDirectory
+      ? `Are you sure you want to delete the folder "${node.name}" and all its contents?`
+      : `Are you sure you want to delete "${node.name}"?`
+
+    // Use confirm dialog - in Electron this works
+    const confirmed = window.confirm(confirmMessage)
+    if (!confirmed) return
+
+    try {
+      if (node.isDirectory) {
+        await fs.promises.rm(node.path, { recursive: true, force: true })
+      } else {
+        await fs.promises.unlink(node.path)
+      }
+      this.refreshFileTree()
+    } catch (err) {
+      console.error('Failed to delete:', err)
+    }
+  }
+
   private onNodeContextMenu = (
     node: IFileTreeNode,
     event: React.MouseEvent<HTMLDivElement>
@@ -258,30 +358,16 @@ export class CodeViewSidebar extends React.Component<
       action: () => this.onNewFolderButtonClick(),
     })
 
-    // Add separator if we have items
-    if (this.props.onRenameItem || this.props.onDeleteItem) {
-      items.push({ type: 'separator' })
-    }
-
-    // Rename option
-    if (this.props.onRenameItem) {
-      items.push({
-        label: 'Rename…',
-        action: () => this.props.onRenameItem?.(node.path),
-      })
-    }
+    // Add separator
+    items.push({ type: 'separator' })
 
     // Delete option
-    if (this.props.onDeleteItem) {
-      items.push({
-        label: node.isDirectory ? 'Delete Folder' : 'Delete File',
-        action: () => this.props.onDeleteItem?.(node.path, node.isDirectory),
-      })
-    }
+    items.push({
+      label: node.isDirectory ? 'Delete Folder' : 'Delete',
+      action: () => this.onDeleteNode(node),
+    })
 
-    if (items.length > 0) {
-      showContextualMenu(items)
-    }
+    showContextualMenu(items)
   }
 
   private onSidebarContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -305,15 +391,30 @@ export class CodeViewSidebar extends React.Component<
   private renderNode(node: IFileTreeNode, depth: number = 0): JSX.Element {
     const isExpanded = this.state.expandedPaths.has(node.path)
     const isSelected = this.props.selectedFile === node.path
+    const isDragging = this.state.draggingPath === node.path
+    const isDropTarget = this.state.dropTargetPath === node.path
     const paddingLeft = depth * 16 + 8
+
+    const className = [
+      'file-tree-item',
+      isSelected ? 'selected' : '',
+      isDragging ? 'dragging' : '',
+      isDropTarget ? 'drop-target' : '',
+    ].filter(Boolean).join(' ')
 
     return (
       <div key={node.path} className="file-tree-node">
         <div
-          className={`file-tree-item ${isSelected ? 'selected' : ''}`}
+          className={className}
           style={{ paddingLeft }}
           onClick={() => this.onNodeClick(node)}
           onContextMenu={e => this.onNodeContextMenu(node, e)}
+          draggable
+          onDragStart={e => this.onDragStart(node, e)}
+          onDragEnd={this.onDragEnd}
+          onDragOver={e => this.onDragOver(node, e)}
+          onDragLeave={this.onDragLeave}
+          onDrop={e => this.onDrop(node, e)}
         >
           {node.isDirectory && (
             <span className="expand-icon">

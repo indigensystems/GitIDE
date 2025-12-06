@@ -29,6 +29,9 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  border: 2px solid transparent;
+  border-radius: var(--border-radius);
+  margin: 1px 0;
 
   &:hover {
     background: var(--box-alt-background-color);
@@ -36,6 +39,15 @@
 
   &.selected {
     background: var(--box-selected-background-color);
+  }
+
+  &.dragging {
+    opacity: 0.5;
+  }
+
+  &.drop-target {
+    background: var(--box-selected-background-color);
+    border-color: var(--focus-color, #58a6ff);
   }
 
   .expand-icon {
