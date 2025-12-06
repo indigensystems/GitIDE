@@ -356,6 +356,7 @@ export class RepositoryView extends React.Component<
         isShowingFoldout={this.props.isShowingFoldout}
         externalEditorLabel={this.props.externalEditorLabel}
         onOpenInExternalEditor={this.props.onOpenInExternalEditor}
+        onOpenInCodeTab={this.onOpenFileInCodeTab}
         onChangesListScrolled={this.onChangesListScrolled}
         changesListScrollTop={scrollTop}
         shouldNudgeToCommit={
@@ -504,6 +505,23 @@ export class RepositoryView extends React.Component<
         activeCodeTab: filePath,
       })
     }
+  }
+
+  /**
+   * Opens a file in the Code tab from a relative path (e.g., from the Changes tab)
+   */
+  private onOpenFileInCodeTab = (relativePath: string) => {
+    const Path = require('path')
+    const fullPath = Path.join(this.props.repository.path, relativePath)
+
+    // Switch to Code tab
+    this.props.dispatcher.changeRepositorySection(
+      this.props.repository,
+      RepositorySectionTab.Code
+    )
+
+    // Open the file
+    this.onCodeFileSelected(fullPath)
   }
 
   private onCodeTabSelect = (filePath: string) => {
