@@ -418,6 +418,8 @@ const imageDiffTypeKey = 'image-diff-type'
 
 const selectedOwnerKey = 'selected-owner'
 const selectedProjectIdKey = 'selected-project-id'
+const cachedProjectsKey = 'cached-owner-projects'
+const cachedRepositoriesKey = 'cached-owner-repositories'
 const selectedSectionTabKey = 'selected-section-tab'
 
 const hideWhitespaceInChangesDiffDefault = false
@@ -8836,8 +8838,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.selectedOwner = owner
     // Clear project selection when owner changes (will restore from localStorage after fetching)
     this.selectedProject = null
-    this.ownerProjects = []
-    this.ownerRepositories = []
     this.projectRepoNames = new Set()
     this.loadingOwnerRepos = true
 
@@ -8848,7 +8848,34 @@ export class AppStore extends TypedBaseStore<IAppState> {
       localStorage.removeItem(selectedOwnerKey)
     }
 
-    // Emit immediately so UI shows loading state
+    // Try to restore cached projects and repos for immediate display (only for "All Owners" mode)
+    if (!owner) {
+      try {
+        const cachedProjects = localStorage.getItem(cachedProjectsKey)
+        const cachedRepos = localStorage.getItem(cachedRepositoriesKey)
+        if (cachedProjects) {
+          this.ownerProjects = JSON.parse(cachedProjects)
+          log.info(`[_setSelectedOwner] Restored ${this.ownerProjects.length} cached projects`)
+        } else {
+          this.ownerProjects = []
+        }
+        if (cachedRepos) {
+          this.ownerRepositories = JSON.parse(cachedRepos)
+          log.info(`[_setSelectedOwner] Restored ${this.ownerRepositories.length} cached repositories`)
+        } else {
+          this.ownerRepositories = []
+        }
+      } catch (e) {
+        log.error(`[_setSelectedOwner] Error restoring cache:`, e)
+        this.ownerProjects = []
+        this.ownerRepositories = []
+      }
+    } else {
+      this.ownerProjects = []
+      this.ownerRepositories = []
+    }
+
+    // Emit immediately so UI shows cached data or loading state
     this.emitUpdate()
 
     // Find a GitHub.com account to use for API calls
@@ -8880,6 +8907,13 @@ export class AppStore extends TypedBaseStore<IAppState> {
           // "All owners" - fetch projects and repos from all owners
           log.info(`[_setSelectedOwner] Fetching all projects and repos for all owners`)
 
+          // Ensure organizations are loaded first
+          if (this.organizations.length === 0) {
+            log.info(`[_setSelectedOwner] Loading organizations first...`)
+            this.organizations = await api.fetchOrgs()
+            log.info(`[_setSelectedOwner] Loaded ${this.organizations.length} organizations`)
+          }
+
           // Fetch projects from user and all organizations in parallel
           const projectPromises: Promise<ReadonlyArray<IAPIProjectV2>>[] = [
             api.fetchOwnerProjects(account.login).catch(() => []),
@@ -8895,6 +8929,17 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
           // Fetch all repos accessible by the user
           this.ownerRepositories = await api.fetchUserRepos()
+        }
+
+        // Cache the fetched projects and repos for faster startup (only for "All Owners" mode)
+        if (!owner) {
+          try {
+            localStorage.setItem(cachedProjectsKey, JSON.stringify(this.ownerProjects))
+            localStorage.setItem(cachedRepositoriesKey, JSON.stringify(this.ownerRepositories))
+            log.info(`[_setSelectedOwner] Cached ${this.ownerProjects.length} projects and ${this.ownerRepositories.length} repositories`)
+          } catch (e) {
+            log.error(`[_setSelectedOwner] Error caching data:`, e)
+          }
         }
 
         // Restore saved project selection if it exists in the fetched projects
