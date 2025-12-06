@@ -117,13 +117,10 @@
         color: var(--text-secondary-color);
         background-color: var(--box-alt-background-color);
         border-top: 1px solid var(--box-border-color);
+        border-bottom: 1px solid var(--box-border-color);
         position: sticky;
         top: 0;
         z-index: 1;
-
-        &:first-child {
-          border-top: none;
-        }
       }
 
       .project-dropdown-item,
