@@ -23,6 +23,8 @@ interface IBoardLayoutProps {
 interface IBoardLayoutState {
   readonly draggedItemId: string | null
   readonly dragOverColumnId: string | null
+  readonly dragOverItemId: string | null
+  readonly columnItemOrder: Map<string, string[]>
 }
 
 interface IColumn {
@@ -33,12 +35,63 @@ interface IColumn {
 }
 
 export class BoardLayout extends React.Component<IBoardLayoutProps, IBoardLayoutState> {
+  private static readonly STORAGE_KEY = 'board-column-order'
+
   public constructor(props: IBoardLayoutProps) {
     super(props)
     this.state = {
       draggedItemId: null,
       dragOverColumnId: null,
+      dragOverItemId: null,
+      columnItemOrder: this.loadColumnOrder(),
     }
+  }
+
+  private loadColumnOrder(): Map<string, string[]> {
+    try {
+      const stored = localStorage.getItem(BoardLayout.STORAGE_KEY)
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        return new Map(Object.entries(parsed))
+      }
+    } catch (e) {
+      // Ignore parse errors
+    }
+    return new Map()
+  }
+
+  private saveColumnOrder(order: Map<string, string[]>) {
+    try {
+      const obj: Record<string, string[]> = {}
+      order.forEach((value, key) => {
+        obj[key] = value
+      })
+      localStorage.setItem(BoardLayout.STORAGE_KEY, JSON.stringify(obj))
+    } catch (e) {
+      // Ignore storage errors
+    }
+  }
+
+  private sortItemsByOrder(
+    items: ReadonlyArray<IAPIProjectV2ItemWithContent>,
+    columnId: string
+  ): ReadonlyArray<IAPIProjectV2ItemWithContent> {
+    const order = this.state.columnItemOrder.get(columnId)
+    if (!order || order.length === 0) {
+      return items
+    }
+
+    // Sort items based on saved order, items not in order go to the end
+    const sorted = [...items].sort((a, b) => {
+      const aIndex = order.indexOf(a.id)
+      const bIndex = order.indexOf(b.id)
+      if (aIndex === -1 && bIndex === -1) return 0
+      if (aIndex === -1) return 1
+      if (bIndex === -1) return -1
+      return aIndex - bIndex
+    })
+
+    return sorted
   }
   private getColumns(): ReadonlyArray<IColumn> {
     const { items, statusField } = this.props
@@ -140,7 +193,7 @@ export class BoardLayout extends React.Component<IBoardLayoutProps, IBoardLayout
   }
 
   private onDragEnd = () => {
-    this.setState({ draggedItemId: null, dragOverColumnId: null })
+    this.setState({ draggedItemId: null, dragOverColumnId: null, dragOverItemId: null })
   }
 
   private onColumnDragOver = (e: React.DragEvent<HTMLDivElement>, columnId: string) => {
@@ -158,20 +211,87 @@ export class BoardLayout extends React.Component<IBoardLayoutProps, IBoardLayout
     }
   }
 
+  private onItemDragOver = (e: React.DragEvent<HTMLDivElement>, itemId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    if (this.state.dragOverItemId !== itemId && this.state.draggedItemId !== itemId) {
+      this.setState({ dragOverItemId: itemId })
+    }
+  }
+
+  private onItemDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+    const relatedTarget = e.relatedTarget as HTMLElement
+    if (!e.currentTarget.contains(relatedTarget)) {
+      this.setState({ dragOverItemId: null })
+    }
+  }
+
+  private onItemDrop = (
+    e: React.DragEvent<HTMLDivElement>,
+    targetItem: IAPIProjectV2ItemWithContent,
+    column: IColumn
+  ) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    const { draggedItemId } = this.state
+
+    if (!draggedItemId || draggedItemId === targetItem.id) {
+      this.setState({ draggedItemId: null, dragOverColumnId: null, dragOverItemId: null })
+      return
+    }
+
+    // Get current column items in sorted order
+    const sortedItems = this.sortItemsByOrder(column.items, column.id)
+    const itemIds = sortedItems.map(item => item.id)
+
+    // Remove dragged item from current position
+    const draggedIndex = itemIds.indexOf(draggedItemId)
+    if (draggedIndex > -1) {
+      itemIds.splice(draggedIndex, 1)
+    }
+
+    // Insert at target position
+    const targetIndex = itemIds.indexOf(targetItem.id)
+    if (targetIndex > -1) {
+      itemIds.splice(targetIndex, 0, draggedItemId)
+    } else {
+      itemIds.push(draggedItemId)
+    }
+
+    // Update state and persist
+    const newOrder = new Map(this.state.columnItemOrder)
+    newOrder.set(column.id, itemIds)
+    this.saveColumnOrder(newOrder)
+    this.setState({
+      columnItemOrder: newOrder,
+      draggedItemId: null,
+      dragOverColumnId: null,
+      dragOverItemId: null,
+    })
+  }
+
   private onColumnDrop = (e: React.DragEvent<HTMLDivElement>, column: IColumn) => {
     e.preventDefault()
-    const { draggedItemId } = this.state
+    const { draggedItemId, dragOverItemId } = this.state
     const { items, onStatusChange } = this.props
 
-    if (!draggedItemId || !onStatusChange) {
-      this.setState({ draggedItemId: null, dragOverColumnId: null })
+    // If dropping on an item, that handler takes precedence
+    if (dragOverItemId) {
+      return
+    }
+
+    if (!draggedItemId) {
+      this.setState({ draggedItemId: null, dragOverColumnId: null, dragOverItemId: null })
       return
     }
 
     // Find the dragged item
     const draggedItem = items.find(item => item.id === draggedItemId)
     if (!draggedItem) {
-      this.setState({ draggedItemId: null, dragOverColumnId: null })
+      this.setState({ draggedItemId: null, dragOverColumnId: null, dragOverItemId: null })
       return
     }
 
@@ -182,14 +302,30 @@ export class BoardLayout extends React.Component<IBoardLayoutProps, IBoardLayout
     const currentStatusId = currentStatus?.type === 'singleSelect' ? currentStatus.optionId : null
 
     // Only trigger change if moving to a different column
-    if (currentStatusId !== column.id && column.id !== 'no-status') {
+    if (currentStatusId !== column.id && column.id !== 'no-status' && onStatusChange) {
       onStatusChange(draggedItem, column.id, column.name)
     }
 
-    this.setState({ draggedItemId: null, dragOverColumnId: null })
+    // If same column, add to end of order
+    if (currentStatusId === column.id || (currentStatusId === null && column.id === 'no-status')) {
+      const sortedItems = this.sortItemsByOrder(column.items, column.id)
+      const itemIds = sortedItems.map(item => item.id)
+      // Move to end if not already there
+      const draggedIndex = itemIds.indexOf(draggedItemId)
+      if (draggedIndex > -1 && draggedIndex !== itemIds.length - 1) {
+        itemIds.splice(draggedIndex, 1)
+        itemIds.push(draggedItemId)
+        const newOrder = new Map(this.state.columnItemOrder)
+        newOrder.set(column.id, itemIds)
+        this.saveColumnOrder(newOrder)
+        this.setState({ columnItemOrder: newOrder })
+      }
+    }
+
+    this.setState({ draggedItemId: null, dragOverColumnId: null, dragOverItemId: null })
   }
 
-  private renderCard(item: IAPIProjectV2ItemWithContent) {
+  private renderCard(item: IAPIProjectV2ItemWithContent, column: IColumn) {
     const content = item.content
     if (!content) {
       return null
@@ -200,7 +336,11 @@ export class BoardLayout extends React.Component<IBoardLayoutProps, IBoardLayout
       : null
 
     const isDragging = this.state.draggedItemId === item.id
-    const cardClassName = classNames('board-card', { dragging: isDragging })
+    const isDragOver = this.state.dragOverItemId === item.id
+    const cardClassName = classNames('board-card', {
+      dragging: isDragging,
+      'drag-over': isDragOver,
+    })
 
     return (
       <div
@@ -209,6 +349,9 @@ export class BoardLayout extends React.Component<IBoardLayoutProps, IBoardLayout
         draggable={true}
         onDragStart={e => this.onDragStart(e, item)}
         onDragEnd={this.onDragEnd}
+        onDragOver={e => this.onItemDragOver(e, item.id)}
+        onDragLeave={this.onItemDragLeave}
+        onDrop={e => this.onItemDrop(e, item, column)}
         onClick={() => this.onCardClick(item)}
       >
         <div className="card-header">
@@ -276,6 +419,9 @@ export class BoardLayout extends React.Component<IBoardLayoutProps, IBoardLayout
       'drag-over': isDragOver,
     })
 
+    // Sort items by saved order
+    const sortedItems = this.sortItemsByOrder(column.items, column.id)
+
     return (
       <div
         key={column.id}
@@ -290,8 +436,8 @@ export class BoardLayout extends React.Component<IBoardLayoutProps, IBoardLayout
           <span className="column-count">{column.items.length}</span>
         </div>
         <div className="column-content">
-          {column.items.map(item => this.renderCard(item))}
-          {column.items.length === 0 && (
+          {sortedItems.map(item => this.renderCard(item, column))}
+          {sortedItems.length === 0 && (
             <div className="column-empty">No items</div>
           )}
         </div>

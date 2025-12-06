@@ -275,6 +275,12 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   }
 
+  // Drop target indicator
+  &.drag-over {
+    border-top: 2px solid var(--focus-color);
+    margin-top: -1px;
+  }
+
   .card-header {
     display: flex;
     align-items: flex-start;
