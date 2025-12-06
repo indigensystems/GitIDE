@@ -463,3 +463,112 @@
   color: var(--text-secondary-color);
   font-size: var(--font-size-sm);
 }
+
+// File tree action buttons
+.file-tree-actions {
+  display: flex;
+  gap: var(--spacing-half);
+  padding: var(--spacing-half) var(--spacing);
+  border-top: var(--base-border);
+  background: var(--box-alt-background-color);
+  flex-shrink: 0;
+}
+
+.file-tree-action-button {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-half);
+  flex: 1;
+  padding: var(--spacing-half) var(--spacing);
+  border: var(--base-border);
+  border-radius: var(--border-radius);
+  background: var(--button-background);
+  font-size: var(--font-size-sm);
+  color: var(--text-color);
+  cursor: pointer;
+  justify-content: center;
+
+  .octicon {
+    width: 14px;
+    height: 14px;
+  }
+
+  &:hover {
+    background: var(--button-hover-background);
+  }
+
+  &:active {
+    background: var(--button-hover-background);
+  }
+}
+
+// Inline new item input
+.new-item-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-half);
+  padding: var(--spacing-third) var(--spacing);
+  background: var(--box-selected-background-color);
+  border-bottom: var(--base-border);
+
+  .file-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    color: var(--text-secondary-color);
+  }
+
+  .new-item-input {
+    flex: 1;
+    min-width: 0;
+    padding: 4px 8px;
+    border: 1px solid var(--text-secondary-color);
+    border-radius: var(--border-radius);
+    background: var(--box-background-color);
+    font-size: var(--font-size-sm);
+    color: var(--text-color);
+    outline: none;
+
+    &:focus {
+      border-color: var(--focus-color);
+    }
+
+    &::placeholder {
+      color: var(--text-secondary-color);
+      opacity: 0.7;
+    }
+  }
+
+  .new-item-confirm,
+  .new-item-cancel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: var(--border-radius);
+    background: transparent;
+    cursor: pointer;
+    color: var(--text-secondary-color);
+
+    .octicon {
+      width: 14px;
+      height: 14px;
+    }
+
+    &:hover {
+      background: var(--button-background);
+      color: var(--text-color);
+    }
+  }
+
+  .new-item-confirm:hover {
+    color: var(--color-success, #238636);
+  }
+
+  .new-item-cancel:hover {
+    color: var(--color-error, #da3633);
+  }
+}

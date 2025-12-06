@@ -163,6 +163,7 @@ export class RepositoryView extends React.Component<
 
   private readonly changesSidebarRef = React.createRef<ChangesSidebar>()
   private readonly compareSidebarRef = React.createRef<CompareSidebar>()
+  private readonly codeViewSidebarRef = React.createRef<CodeViewSidebar>()
 
   private focusHistoryNeeded: boolean = false
   private focusChangesNeeded: boolean = false
@@ -455,9 +456,11 @@ export class RepositoryView extends React.Component<
   private renderCodeSidebar(): JSX.Element {
     return (
       <CodeViewSidebar
+        ref={this.codeViewSidebarRef}
         repositoryPath={this.props.repository.path}
         selectedFile={this.state.activeCodeTab}
         onFileSelected={this.onCodeFileSelected}
+        onFileCreated={this.onCodeFileSelected}
       />
     )
   }

@@ -417,7 +417,7 @@ export class CodeViewContent extends React.Component<
     const { activeTab, emoji, repositoryPath } = this.props
     const { content, isEditing } = this.state
 
-    if (!content || !activeTab) {
+    if (content === null || !activeTab) {
       return this.renderEmptyState()
     }
 
@@ -520,7 +520,7 @@ export class CodeViewContent extends React.Component<
     const { activeTab, repositoryPath } = this.props
     const { content, isEditing } = this.state
 
-    if (!content || !activeTab) {
+    if (content === null || !activeTab) {
       return this.renderEmptyState()
     }
 

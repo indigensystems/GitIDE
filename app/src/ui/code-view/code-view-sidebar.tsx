@@ -3,6 +3,8 @@ import * as Path from 'path'
 import * as fs from 'fs'
 import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
+import { showContextualMenu } from '../../lib/menu-item'
+import { IMenuItem } from '../../lib/menu-item'
 
 interface IFileTreeNode {
   name: string
@@ -16,24 +18,35 @@ interface ICodeViewSidebarProps {
   readonly repositoryPath: string
   readonly selectedFile: string | null
   readonly onFileSelected: (filePath: string) => void
+  readonly onFileCreated?: (filePath: string) => void
+  readonly onDeleteItem?: (itemPath: string, isDirectory: boolean) => void
+  readonly onRenameItem?: (itemPath: string) => void
 }
 
 interface ICodeViewSidebarState {
   readonly tree: IFileTreeNode | null
   readonly expandedPaths: Set<string>
   readonly isLoading: boolean
+  /** 'file' or 'folder' when creating, null otherwise */
+  readonly creatingType: 'file' | 'folder' | null
+  /** The input value for the new item name */
+  readonly newItemName: string
 }
 
 export class CodeViewSidebar extends React.Component<
   ICodeViewSidebarProps,
   ICodeViewSidebarState
 > {
+  private newItemInputRef = React.createRef<HTMLInputElement>()
+
   public constructor(props: ICodeViewSidebarProps) {
     super(props)
     this.state = {
       tree: null,
       expandedPaths: new Set([props.repositoryPath]),
       isLoading: true,
+      creatingType: null,
+      newItemName: '',
     }
   }
 
@@ -45,6 +58,11 @@ export class CodeViewSidebar extends React.Component<
     if (prevProps.repositoryPath !== this.props.repositoryPath) {
       this.loadFileTree()
     }
+  }
+
+  /** Refresh the file tree (call after creating/deleting files) */
+  public refreshFileTree() {
+    this.loadFileTree()
   }
 
   private async loadFileTree() {
@@ -221,6 +239,69 @@ export class CodeViewSidebar extends React.Component<
     }
   }
 
+  private onNodeContextMenu = (
+    node: IFileTreeNode,
+    event: React.MouseEvent<HTMLDivElement>
+  ) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const items: IMenuItem[] = []
+
+    // For directories, show "New File" and "New Folder" options
+    items.push({
+      label: 'New File…',
+      action: () => this.onNewFileButtonClick(),
+    })
+    items.push({
+      label: 'New Folder…',
+      action: () => this.onNewFolderButtonClick(),
+    })
+
+    // Add separator if we have items
+    if (this.props.onRenameItem || this.props.onDeleteItem) {
+      items.push({ type: 'separator' })
+    }
+
+    // Rename option
+    if (this.props.onRenameItem) {
+      items.push({
+        label: 'Rename…',
+        action: () => this.props.onRenameItem?.(node.path),
+      })
+    }
+
+    // Delete option
+    if (this.props.onDeleteItem) {
+      items.push({
+        label: node.isDirectory ? 'Delete Folder' : 'Delete File',
+        action: () => this.props.onDeleteItem?.(node.path, node.isDirectory),
+      })
+    }
+
+    if (items.length > 0) {
+      showContextualMenu(items)
+    }
+  }
+
+  private onSidebarContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const items: IMenuItem[] = [
+      {
+        label: 'New File…',
+        action: () => this.onNewFileButtonClick(),
+      },
+      {
+        label: 'New Folder…',
+        action: () => this.onNewFolderButtonClick(),
+      },
+    ]
+
+    showContextualMenu(items)
+  }
+
   private renderNode(node: IFileTreeNode, depth: number = 0): JSX.Element {
     const isExpanded = this.state.expandedPaths.has(node.path)
     const isSelected = this.props.selectedFile === node.path
@@ -232,6 +313,7 @@ export class CodeViewSidebar extends React.Component<
           className={`file-tree-item ${isSelected ? 'selected' : ''}`}
           style={{ paddingLeft }}
           onClick={() => this.onNodeClick(node)}
+          onContextMenu={e => this.onNodeContextMenu(node, e)}
         >
           {node.isDirectory && (
             <span className="expand-icon">
@@ -252,8 +334,111 @@ export class CodeViewSidebar extends React.Component<
     )
   }
 
+  private onNewFileButtonClick = () => {
+    this.setState({ creatingType: 'file', newItemName: '' }, () => {
+      this.newItemInputRef.current?.focus()
+    })
+  }
+
+  private onNewFolderButtonClick = () => {
+    this.setState({ creatingType: 'folder', newItemName: '' }, () => {
+      this.newItemInputRef.current?.focus()
+    })
+  }
+
+  private onNewItemNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    this.setState({ newItemName: e.target.value })
+  }
+
+  private onNewItemKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      this.confirmCreate()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      this.cancelCreate()
+    }
+  }
+
+  private onNewItemBlur = () => {
+    // Small delay to allow click on confirm button to register
+    setTimeout(() => {
+      if (this.state.creatingType !== null && !this.state.newItemName.trim()) {
+        this.cancelCreate()
+      }
+    }, 150)
+  }
+
+  private cancelCreate = () => {
+    this.setState({ creatingType: null, newItemName: '' })
+  }
+
+  private confirmCreate = async () => {
+    const { creatingType, newItemName } = this.state
+    if (!creatingType || !newItemName.trim()) {
+      this.cancelCreate()
+      return
+    }
+
+    const itemPath = Path.join(this.props.repositoryPath, newItemName.trim())
+
+    try {
+      if (creatingType === 'file') {
+        await fs.promises.writeFile(itemPath, '')
+        this.refreshFileTree()
+        this.props.onFileCreated?.(itemPath)
+      } else {
+        await fs.promises.mkdir(itemPath, { recursive: true })
+        this.refreshFileTree()
+      }
+    } catch (e) {
+      console.error(`Failed to create ${creatingType}:`, e)
+    }
+
+    this.setState({ creatingType: null, newItemName: '' })
+  }
+
+  private renderNewItemInput(): JSX.Element | null {
+    const { creatingType, newItemName } = this.state
+    if (!creatingType) return null
+
+    const icon = creatingType === 'file' ? octicons.file : octicons.fileDirectoryFill
+    const placeholder = creatingType === 'file' ? 'filename.ts' : 'folder-name'
+
+    return (
+      <div className="new-item-input-row">
+        <Octicon symbol={icon} className="file-icon" />
+        <input
+          ref={this.newItemInputRef}
+          type="text"
+          className="new-item-input"
+          value={newItemName}
+          onChange={this.onNewItemNameChange}
+          onKeyDown={this.onNewItemKeyDown}
+          onBlur={this.onNewItemBlur}
+          placeholder={placeholder}
+          autoFocus
+        />
+        <button
+          className="new-item-confirm"
+          onClick={this.confirmCreate}
+          title="Create"
+        >
+          <Octicon symbol={octicons.check} />
+        </button>
+        <button
+          className="new-item-cancel"
+          onClick={this.cancelCreate}
+          title="Cancel"
+        >
+          <Octicon symbol={octicons.x} />
+        </button>
+      </div>
+    )
+  }
+
   public render() {
-    const { tree, isLoading } = this.state
+    const { tree, isLoading, creatingType } = this.state
 
     if (isLoading) {
       return (
@@ -272,10 +457,31 @@ export class CodeViewSidebar extends React.Component<
     }
 
     return (
-      <div className="code-view-sidebar">
+      <div className="code-view-sidebar" onContextMenu={this.onSidebarContextMenu}>
         <div className="file-tree">
+          {this.renderNewItemInput()}
           {tree.children?.map(child => this.renderNode(child, 0))}
         </div>
+        {!creatingType && (
+          <div className="file-tree-actions">
+            <button
+              className="file-tree-action-button"
+              onClick={this.onNewFileButtonClick}
+              title="New File"
+            >
+              <Octicon symbol={octicons.plus} />
+              <span>New File</span>
+            </button>
+            <button
+              className="file-tree-action-button"
+              onClick={this.onNewFolderButtonClick}
+              title="New Folder"
+            >
+              <Octicon symbol={octicons.fileDirectoryFill} />
+              <span>New Folder</span>
+            </button>
+          </div>
+        )}
       </div>
     )
   }
