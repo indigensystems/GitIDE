@@ -347,7 +347,7 @@
   display: flex;
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   font-family: var(--font-family-monospace);
   font-size: var(--font-size-sm);
   line-height: 1.5;
@@ -364,8 +364,13 @@
   user-select: none;
   flex-shrink: 0;
   min-width: 3em;
-  position: sticky;
-  left: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+
+  // Hide scrollbar but allow scrolling (synced via JS)
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 .line-number {
@@ -377,7 +382,7 @@
   margin: 0;
   padding: var(--spacing);
   background: var(--background-color);
-  overflow-x: auto;
+  overflow: auto;
   min-width: 0;
 
   code {

@@ -56,6 +56,8 @@ export class CodeViewContent extends React.Component<
 > {
   private textareaRef = React.createRef<HTMLTextAreaElement>()
   private lineNumbersRef = React.createRef<HTMLDivElement>()
+  private viewLineNumbersRef = React.createRef<HTMLDivElement>()
+  private codeContentRef = React.createRef<HTMLPreElement>()
   private contentCache = new Map<string, { content: string | null; isBinary: boolean; error: string | null }>()
   private _isMounted = false
   private _currentLoadingPath: string | null = null
@@ -324,6 +326,13 @@ export class CodeViewContent extends React.Component<
     // Sync line numbers scroll with editor scroll
     if (this.lineNumbersRef.current) {
       this.lineNumbersRef.current.scrollTop = event.currentTarget.scrollTop
+    }
+  }
+
+  private onCodeContentScroll = (event: React.UIEvent<HTMLPreElement>) => {
+    // Sync line numbers scroll with code content scroll (view mode)
+    if (this.viewLineNumbersRef.current) {
+      this.viewLineNumbersRef.current.scrollTop = event.currentTarget.scrollTop
     }
   }
 
@@ -947,14 +956,18 @@ export class CodeViewContent extends React.Component<
           </div>
         </div>
         <div className="code-container">
-          <div className="line-numbers">
+          <div className="line-numbers" ref={this.viewLineNumbersRef}>
             {lines.map((_, i) => (
               <div key={i} className="line-number">
                 {i + 1}
               </div>
             ))}
           </div>
-          <pre className="code-content">
+          <pre
+            className="code-content"
+            ref={this.codeContentRef}
+            onScroll={this.onCodeContentScroll}
+          >
             <code>
               {lines.map((line, i) => (
                 <div key={i} className="code-line">
