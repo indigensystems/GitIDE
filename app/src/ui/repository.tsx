@@ -173,23 +173,8 @@ export class RepositoryView extends React.Component<
   public constructor(props: IRepositoryViewProps) {
     super(props)
 
-    // Restore code view tabs from localStorage
-    let openCodeTabs: ReadonlyArray<IOpenTab> = []
-    let activeCodeTab: string | null = null
-
-    try {
-      const savedTabs = localStorage.getItem('code-view-open-tabs')
-      const savedActiveTab = localStorage.getItem('code-view-active-tab')
-
-      if (savedTabs) {
-        openCodeTabs = JSON.parse(savedTabs) as ReadonlyArray<IOpenTab>
-      }
-      if (savedActiveTab) {
-        activeCodeTab = savedActiveTab
-      }
-    } catch (e) {
-      log.warn('Failed to restore code view tabs from localStorage', e)
-    }
+    // Restore code view tabs from localStorage for this repository
+    const { openCodeTabs, activeCodeTab } = this.loadTabsForRepository(props.repository.id)
 
     this.state = {
       changesListScrollTop: 0,
@@ -199,6 +184,39 @@ export class RepositoryView extends React.Component<
       openCodeTabs,
       activeCodeTab,
       terminalCounter: 1,
+    }
+  }
+
+  private getTabStorageKey(repoId: number): string {
+    return `code-view-tabs-${repoId}`
+  }
+
+  private loadTabsForRepository(repoId: number): { openCodeTabs: ReadonlyArray<IOpenTab>, activeCodeTab: string | null } {
+    let openCodeTabs: ReadonlyArray<IOpenTab> = []
+    let activeCodeTab: string | null = null
+
+    try {
+      const storageKey = this.getTabStorageKey(repoId)
+      const savedData = localStorage.getItem(storageKey)
+
+      if (savedData) {
+        const parsed = JSON.parse(savedData)
+        openCodeTabs = parsed.tabs || []
+        activeCodeTab = parsed.activeTab || null
+      }
+    } catch (e) {
+      log.warn('Failed to restore code view tabs from localStorage', e)
+    }
+
+    return { openCodeTabs, activeCodeTab }
+  }
+
+  private saveTabsForRepository(repoId: number, tabs: ReadonlyArray<IOpenTab>, activeTab: string | null): void {
+    try {
+      const storageKey = this.getTabStorageKey(repoId)
+      localStorage.setItem(storageKey, JSON.stringify({ tabs, activeTab }))
+    } catch (e) {
+      log.warn('Failed to persist code view tabs to localStorage', e)
     }
   }
 
@@ -1138,24 +1156,31 @@ export class RepositoryView extends React.Component<
       this.compareSidebarRef.current?.focusHistory()
     }
 
+    // Handle repository change - save current tabs and load new repo's tabs
+    if (prevProps.repository.id !== this.props.repository.id) {
+      // Save tabs for the previous repository
+      this.saveTabsForRepository(
+        prevProps.repository.id,
+        prevState.openCodeTabs,
+        prevState.activeCodeTab
+      )
+
+      // Load tabs for the new repository
+      const { openCodeTabs, activeCodeTab } = this.loadTabsForRepository(this.props.repository.id)
+      this.setState({ openCodeTabs, activeCodeTab })
+      return
+    }
+
     // Persist code view tabs to localStorage when they change
     if (
       prevState.openCodeTabs !== this.state.openCodeTabs ||
       prevState.activeCodeTab !== this.state.activeCodeTab
     ) {
-      try {
-        localStorage.setItem(
-          'code-view-open-tabs',
-          JSON.stringify(this.state.openCodeTabs)
-        )
-        if (this.state.activeCodeTab) {
-          localStorage.setItem('code-view-active-tab', this.state.activeCodeTab)
-        } else {
-          localStorage.removeItem('code-view-active-tab')
-        }
-      } catch (e) {
-        log.warn('Failed to persist code view tabs to localStorage', e)
-      }
+      this.saveTabsForRepository(
+        this.props.repository.id,
+        this.state.openCodeTabs,
+        this.state.activeCodeTab
+      )
     }
   }
 

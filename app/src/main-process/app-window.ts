@@ -189,7 +189,10 @@ export class AppWindow {
     })
 
     this.window.webContents.on('did-fail-load', () => {
-      this.window.webContents.openDevTools()
+      // Only open DevTools in development mode
+      if (process.env.NODE_ENV === 'development') {
+        this.window.webContents.openDevTools()
+      }
       this.window.show()
     })
 
