@@ -140,6 +140,8 @@ interface IRepositoryViewState {
   readonly openCodeTabs: ReadonlyArray<IOpenTab>
   /** The currently active tab in the code view */
   readonly activeCodeTab: string | null
+  /** Counter for generating unique terminal IDs */
+  readonly terminalCounter: number
 }
 
 const enum Tab {
@@ -180,7 +182,7 @@ export class RepositoryView extends React.Component<
       const savedActiveTab = localStorage.getItem('code-view-active-tab')
 
       if (savedTabs) {
-        openCodeTabs = JSON.parse(savedTabs)
+        openCodeTabs = JSON.parse(savedTabs) as ReadonlyArray<IOpenTab>
       }
       if (savedActiveTab) {
         activeCodeTab = savedActiveTab
@@ -196,6 +198,7 @@ export class RepositoryView extends React.Component<
       selectedIssueInfo: null,
       openCodeTabs,
       activeCodeTab,
+      terminalCounter: 1,
     }
   }
 
@@ -461,6 +464,7 @@ export class RepositoryView extends React.Component<
         selectedFile={this.state.activeCodeTab}
         onFileSelected={this.onCodeFileSelected}
         onFileCreated={this.onCodeFileSelected}
+        onOpenTerminal={this.onOpenTerminal}
       />
     )
   }
@@ -509,6 +513,58 @@ export class RepositoryView extends React.Component<
       t.filePath === filePath ? { ...t, hasUnsavedChanges } : t
     )
     this.setState({ openCodeTabs: newTabs })
+  }
+
+  private onOpenTerminal = async () => {
+    const repositoryPath = this.props.repository.path
+    const { spawn } = require('child_process')
+    const platform = process.platform
+
+    if (platform === 'darwin') {
+      // macOS: Use AppleScript to open Terminal.app
+      const script = `
+        tell application "Terminal"
+          activate
+          do script "cd '${repositoryPath.replace(/'/g, "'\\''")}'"
+        end tell
+      `
+      spawn('osascript', ['-e', script])
+    } else if (platform === 'linux') {
+      // Linux: Try common terminal emulators in order of preference
+      const terminals = [
+        { cmd: 'gnome-terminal', args: ['--working-directory', repositoryPath] },
+        { cmd: 'konsole', args: ['--workdir', repositoryPath] },
+        { cmd: 'xfce4-terminal', args: ['--working-directory', repositoryPath] },
+        { cmd: 'xterm', args: ['-e', `cd "${repositoryPath}" && $SHELL`] },
+        { cmd: 'x-terminal-emulator', args: ['-e', `cd "${repositoryPath}" && $SHELL`] },
+      ]
+
+      // Try each terminal until one works
+      const tryTerminal = (index: number) => {
+        if (index >= terminals.length) {
+          log.error('No terminal emulator found')
+          return
+        }
+        const { cmd, args } = terminals[index]
+        const child = spawn(cmd, args, { detached: true, stdio: 'ignore' })
+        child.on('error', () => tryTerminal(index + 1))
+        child.unref()
+      }
+      tryTerminal(0)
+    } else if (platform === 'win32') {
+      // Windows: Use cmd.exe or PowerShell
+      spawn('cmd.exe', ['/c', 'start', 'cmd.exe', '/k', `cd /d "${repositoryPath}"`], {
+        detached: true,
+        stdio: 'ignore',
+      })
+    }
+  }
+
+  private onTerminalExit = (terminalTabPath: string) => {
+    // Don't auto-close - let user see the terminal exited
+    console.log('Terminal exited:', terminalTabPath)
+    // Optionally close after a delay or leave it for user to close manually
+    // this.onCodeTabClose(terminalTabPath)
   }
 
   private onIssuesRefresh = () => {
@@ -756,6 +812,7 @@ export class RepositoryView extends React.Component<
         onTabSelect={this.onCodeTabSelect}
         onTabClose={this.onCodeTabClose}
         onTabUnsavedChange={this.onCodeTabUnsavedChange}
+        onTerminalExit={this.onTerminalExit}
       />
     )
   }

@@ -584,3 +584,27 @@
     color: var(--color-error, #da3633);
   }
 }
+
+// Terminal styles
+.code-view-content.terminal-view {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.terminal-container {
+  width: 100%;
+  height: 100%;
+  background: #1e1e1e;
+  padding: var(--spacing-half);
+  box-sizing: border-box;
+
+  .xterm {
+    height: 100%;
+  }
+
+  .xterm-viewport {
+    overflow-y: auto !important;
+  }
+}

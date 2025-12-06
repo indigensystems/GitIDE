@@ -35,6 +35,11 @@ export class AppWindow {
   private window: Electron.BrowserWindow
   private emitter = new Emitter()
 
+  /** Get the underlying BrowserWindow instance */
+  public get browserWindow(): Electron.BrowserWindow {
+    return this.window
+  }
+
   private _loadTime: number | null = null
   private _rendererReadyTime: number | null = null
   private isDownloadingUpdate: boolean = false

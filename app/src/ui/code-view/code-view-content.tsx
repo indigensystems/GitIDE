@@ -6,10 +6,24 @@ import * as octicons from '../octicons/octicons.generated'
 import { SandboxedMarkdown } from '../lib/sandboxed-markdown'
 import { Emoji } from '../../lib/emoji'
 import { shell } from 'electron'
+import { Terminal } from './terminal'
+
+// Prefix for terminal tab identifiers
+const TERMINAL_TAB_PREFIX = 'terminal://'
 
 interface IOpenTab {
   readonly filePath: string
   readonly hasUnsavedChanges: boolean
+}
+
+/** Check if a tab path represents a terminal */
+function isTerminalTab(filePath: string): boolean {
+  return filePath.startsWith(TERMINAL_TAB_PREFIX)
+}
+
+/** Extract terminal ID from a terminal tab path */
+function getTerminalId(filePath: string): string {
+  return filePath.slice(TERMINAL_TAB_PREFIX.length)
 }
 
 interface ICodeViewContentProps {
@@ -20,6 +34,7 @@ interface ICodeViewContentProps {
   readonly onTabSelect: (filePath: string) => void
   readonly onTabClose: (filePath: string) => void
   readonly onTabUnsavedChange: (filePath: string, hasUnsavedChanges: boolean) => void
+  readonly onTerminalExit?: (terminalTabPath: string) => void
 }
 
 interface ICodeViewContentState {
@@ -317,6 +332,16 @@ export class CodeViewContent extends React.Component<
     }
   }
 
+  private getTerminalTabName(tabPath: string): string {
+    // Extract terminal number from ID or use a generic name
+    const terminalId = getTerminalId(tabPath)
+    const match = terminalId.match(/terminal-(\d+)/)
+    if (match) {
+      return `Terminal ${match[1]}`
+    }
+    return 'Terminal'
+  }
+
   private renderTabBar() {
     const { openTabs, activeTab, repositoryPath } = this.props
 
@@ -327,16 +352,22 @@ export class CodeViewContent extends React.Component<
     return (
       <div className="file-tabs">
         {openTabs.map(tab => {
-          const fileName = Path.basename(tab.filePath)
+          const isTerminal = isTerminalTab(tab.filePath)
+          const fileName = isTerminal
+            ? this.getTerminalTabName(tab.filePath)
+            : Path.basename(tab.filePath)
           const isActive = tab.filePath === activeTab
-          const icon = this.getFileIcon(tab.filePath)
+          const icon = isTerminal ? octicons.terminal : this.getFileIcon(tab.filePath)
+          const tabTitle = isTerminal
+            ? 'Terminal'
+            : Path.relative(repositoryPath, tab.filePath)
 
           return (
             <div
               key={tab.filePath}
               className={`file-tab ${isActive ? 'active' : ''}`}
               onClick={() => this.onTabClick(tab.filePath)}
-              title={Path.relative(repositoryPath, tab.filePath)}
+              title={tabTitle}
             >
               <Octicon symbol={icon} className="tab-icon" />
               <span className="tab-name">
@@ -576,12 +607,47 @@ export class CodeViewContent extends React.Component<
     )
   }
 
+  private onTerminalExit = (terminalTabPath: string) => {
+    this.props.onTerminalExit?.(terminalTabPath)
+  }
+
+  private renderTerminals() {
+    const { openTabs, activeTab, repositoryPath } = this.props
+
+    // Render all terminal tabs (keep them mounted but hidden when not active)
+    const terminalTabs = openTabs.filter(tab => isTerminalTab(tab.filePath))
+
+    return terminalTabs.map(tab => {
+      const terminalId = getTerminalId(tab.filePath)
+      const isActive = tab.filePath === activeTab
+
+      return (
+        <Terminal
+          key={tab.filePath}
+          terminalId={terminalId}
+          cwd={repositoryPath}
+          isActive={isActive}
+          onExit={() => this.onTerminalExit(tab.filePath)}
+        />
+      )
+    })
+  }
+
   private renderContentArea() {
     const { activeTab, openTabs } = this.props
     const { isLoading, error, isBinary } = this.state
 
     if (openTabs.length === 0 || !activeTab) {
       return this.renderEmptyState()
+    }
+
+    // Check if active tab is a terminal
+    if (isTerminalTab(activeTab)) {
+      return (
+        <div className="code-view-content terminal-view">
+          {this.renderTerminals()}
+        </div>
+      )
     }
 
     if (isLoading) {
@@ -610,3 +676,4 @@ export class CodeViewContent extends React.Component<
 }
 
 export type { IOpenTab }
+export { TERMINAL_TAB_PREFIX, isTerminalTab, getTerminalId }

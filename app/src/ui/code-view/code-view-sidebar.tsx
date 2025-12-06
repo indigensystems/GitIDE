@@ -21,6 +21,7 @@ interface ICodeViewSidebarProps {
   readonly onFileCreated?: (filePath: string) => void
   readonly onDeleteItem?: (itemPath: string, isDirectory: boolean) => void
   readonly onRenameItem?: (itemPath: string) => void
+  readonly onOpenTerminal?: () => void
 }
 
 interface ICodeViewSidebarState {
@@ -580,6 +581,14 @@ export class CodeViewSidebar extends React.Component<
             >
               <Octicon symbol={octicons.fileDirectoryFill} />
               <span>New Folder</span>
+            </button>
+            <button
+              className="file-tree-action-button"
+              onClick={this.props.onOpenTerminal}
+              title="Open Terminal"
+            >
+              <Octicon symbol={octicons.terminal} />
+              <span>Terminal</span>
             </button>
           </div>
         )}
