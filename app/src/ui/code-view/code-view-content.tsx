@@ -55,6 +55,7 @@ export class CodeViewContent extends React.Component<
   ICodeViewContentState
 > {
   private textareaRef = React.createRef<HTMLTextAreaElement>()
+  private lineNumbersRef = React.createRef<HTMLDivElement>()
   private contentCache = new Map<string, { content: string | null; isBinary: boolean; error: string | null }>()
   private _isMounted = false
   private _currentLoadingPath: string | null = null
@@ -319,6 +320,13 @@ export class CodeViewContent extends React.Component<
     }
   }
 
+  private onEditorScroll = (event: React.UIEvent<HTMLTextAreaElement>) => {
+    // Sync line numbers scroll with editor scroll
+    if (this.lineNumbersRef.current) {
+      this.lineNumbersRef.current.scrollTop = event.currentTarget.scrollTop
+    }
+  }
+
   private applyFormatting = (format: string) => {
     const textarea = this.textareaRef.current
     if (!textarea) return
@@ -412,14 +420,22 @@ export class CodeViewContent extends React.Component<
     }
 
     const newValue = value.substring(0, start) + newText + value.substring(end)
+    // Save scroll position before state update
+    const scrollTop = textarea.scrollTop
     this.setState({ editedContent: newValue }, () => {
       textarea.focus()
+      // Restore scroll position after focus
+      textarea.scrollTop = scrollTop
       if (selectAfter && !selectedText) {
         // Select the placeholder text
         textarea.selectionStart = start + cursorOffset
         textarea.selectionEnd = start + newText.length - cursorOffset
       } else {
         textarea.selectionStart = textarea.selectionEnd = start + cursorOffset
+      }
+      // Sync line numbers
+      if (this.lineNumbersRef.current) {
+        this.lineNumbersRef.current.scrollTop = scrollTop
       }
     })
 
@@ -822,7 +838,7 @@ export class CodeViewContent extends React.Component<
           <button
             className="toolbar-button wiki-link-button"
             onClick={() => this.applyFormatting('wikilink')}
-            title="Wiki Link [[note]]"
+            title={`Wiki Link\n\n[[file.md]] - link in this repo\n[[repo:path/file.md]] - link in another repo`}
           >
             <span className="wiki-link-icon">[[</span>
           </button>
@@ -868,7 +884,7 @@ export class CodeViewContent extends React.Component<
         </div>
         {isMarkdown && this.renderMarkdownToolbar()}
         <div className="editor-container">
-          <div className="line-numbers">
+          <div className="line-numbers" ref={this.lineNumbersRef}>
             {lines.map((_, i) => (
               <div key={i} className="line-number">
                 {i + 1}
@@ -881,6 +897,7 @@ export class CodeViewContent extends React.Component<
             value={editedContent}
             onChange={this.onContentChange}
             onKeyDown={this.onKeyDown}
+            onScroll={this.onEditorScroll}
             spellCheck={false}
             autoComplete="off"
             autoCorrect="off"

@@ -417,7 +417,13 @@
       font-family: var(--font-family-monospace);
       font-size: var(--font-size-sm);
       line-height: 1.5;
-      overflow: hidden;
+      overflow-y: auto;
+      overflow-x: hidden;
+
+      // Hide scrollbar but allow scrolling (synced via JS)
+      &::-webkit-scrollbar {
+        display: none;
+      }
     }
 
     .code-editor {
