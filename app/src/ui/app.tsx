@@ -3760,6 +3760,7 @@ export class App extends React.Component<IAppProps, IAppState> {
           // component to reset the scroll positions.
           key={selectedState.repository.hash}
           repository={selectedState.repository}
+          repositories={this.state.repositories.filter((r): r is Repository => r instanceof Repository)}
           state={selectedState.state}
           dispatcher={this.props.dispatcher}
           emoji={state.emoji}

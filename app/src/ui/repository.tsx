@@ -48,6 +48,7 @@ import { PopupType } from '../models/popup'
 
 interface IRepositoryViewProps {
   readonly repository: Repository
+  readonly repositories: ReadonlyArray<Repository>
   readonly state: IRepositoryState
   readonly dispatcher: Dispatcher
   readonly emoji: Map<string, Emoji>
@@ -826,13 +827,49 @@ export class RepositoryView extends React.Component<
         openTabs={this.state.openCodeTabs}
         activeTab={this.state.activeCodeTab}
         repositoryPath={this.props.repository.path}
+        repositoryName={this.props.repository.name}
         emoji={this.props.emoji}
         onTabSelect={this.onCodeTabSelect}
         onTabClose={this.onCodeTabClose}
         onTabUnsavedChange={this.onCodeTabUnsavedChange}
         onTerminalExit={this.onTerminalExit}
+        onWikiLinkClick={this.onWikiLinkClick}
       />
     )
+  }
+
+  private onWikiLinkClick = async (repoName: string | null, filePath: string) => {
+    if (!repoName) {
+      // Same repo, just open the file
+      const fullPath = require('path').join(this.props.repository.path, filePath)
+      this.onCodeTabSelect(fullPath)
+      return
+    }
+
+    // Cross-repo link - find the repository and switch to it
+    const { repositories, dispatcher } = this.props
+
+    // Find the repository by name (case-insensitive)
+    const targetRepo = repositories.find(
+      r => r.name.toLowerCase() === repoName.toLowerCase()
+    )
+
+    if (!targetRepo) {
+      // Repository not found
+      dispatcher.showPopup({
+        type: PopupType.Error,
+        error: new Error(`Repository "${repoName}" not found.\n\nMake sure the repository is added to GitHub Desktop.`),
+      })
+      return
+    }
+
+    // Store the file to open BEFORE switching repos
+    // so componentDidUpdate can pick it up after the switch
+    const fullPath = require('path').join(targetRepo.path, filePath)
+    localStorage.setItem('pending-wiki-link-file', fullPath)
+
+    // Switch to the target repository
+    await dispatcher.selectRepository(targetRepo)
   }
 
   private renderContentForTasks(): JSX.Element | null {
@@ -1136,6 +1173,29 @@ export class RepositoryView extends React.Component<
 
   public componentDidMount() {
     window.addEventListener('keydown', this.onGlobalKeyDown)
+
+    // Check for pending wiki link navigation (from cross-repo link)
+    this.checkPendingWikiLink()
+  }
+
+  private checkPendingWikiLink() {
+    const pendingFile = localStorage.getItem('pending-wiki-link-file')
+    if (pendingFile) {
+      localStorage.removeItem('pending-wiki-link-file')
+      // Verify the file is in the current repository
+      if (pendingFile.startsWith(this.props.repository.path)) {
+        // Small delay to ensure the component is fully mounted
+        setTimeout(() => {
+          // Switch to Code section
+          this.props.dispatcher.changeRepositorySection(
+            this.props.repository,
+            RepositorySectionTab.Code
+          )
+          // Open the file (adds tab if needed, switches if exists)
+          this.onCodeFileSelected(pendingFile)
+        }, 100)
+      }
+    }
   }
 
   public componentWillUnmount() {
@@ -1167,7 +1227,10 @@ export class RepositoryView extends React.Component<
 
       // Load tabs for the new repository
       const { openCodeTabs, activeCodeTab } = this.loadTabsForRepository(this.props.repository.id)
-      this.setState({ openCodeTabs, activeCodeTab })
+      this.setState({ openCodeTabs, activeCodeTab }, () => {
+        // Check for pending wiki link after tabs are loaded
+        this.checkPendingWikiLink()
+      })
       return
     }
 

@@ -674,4 +674,26 @@
   s {
     text-decoration: line-through;
   }
+
+  &.wiki-link-button {
+    .wiki-link-icon {
+      font-weight: 600;
+      font-size: 12px;
+      letter-spacing: -1px;
+    }
+  }
+}
+
+// Wiki link styles in rendered markdown
+.wiki-link {
+  color: var(--md-accent-fg-color, #58a6ff);
+  text-decoration: none;
+  background: var(--md-canvas-subtle-color, rgba(88, 166, 255, 0.1));
+  padding: 1px 4px;
+  border-radius: 3px;
+
+  &:hover {
+    text-decoration: underline;
+    background: var(--md-canvas-subtle-color, rgba(88, 166, 255, 0.2));
+  }
 }

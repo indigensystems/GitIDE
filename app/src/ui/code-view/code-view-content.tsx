@@ -30,11 +30,14 @@ interface ICodeViewContentProps {
   readonly openTabs: ReadonlyArray<IOpenTab>
   readonly activeTab: string | null
   readonly repositoryPath: string
+  readonly repositoryName: string
   readonly emoji: Map<string, Emoji>
   readonly onTabSelect: (filePath: string) => void
   readonly onTabClose: (filePath: string) => void
   readonly onTabUnsavedChange: (filePath: string, hasUnsavedChanges: boolean) => void
   readonly onTerminalExit?: (terminalTabPath: string) => void
+  /** Callback when a wiki link is clicked. Returns true if navigation was handled. */
+  readonly onWikiLinkClick?: (repoName: string | null, filePath: string) => void
 }
 
 interface ICodeViewContentState {
@@ -393,6 +396,17 @@ export class CodeViewContent extends React.Component<
         newText = this.applyLinePrefix('> ', selectedText)
         cursorOffset = newText.length
         break
+      case 'wikilink':
+        if (selectedText) {
+          // If text is selected, use it as the link path
+          newText = `[[${selectedText}]]`
+          cursorOffset = newText.length
+        } else {
+          newText = `[[note.md]]`
+          cursorOffset = 2 // Position cursor after [[
+          selectAfter = true
+        }
+        break
       default:
         return
     }
@@ -571,7 +585,38 @@ export class CodeViewContent extends React.Component<
   }
 
   private onMarkdownLinkClicked = (url: string) => {
+    // Check if it's a wiki link (internal navigation)
+    if (url.startsWith('wikilink://')) {
+      const linkPath = decodeURIComponent(url.replace('wikilink://', ''))
+      this.handleWikiLinkClick(linkPath)
+      return
+    }
     shell.openExternal(url)
+  }
+
+  private handleWikiLinkClick = (linkPath: string) => {
+    const { repositoryPath, repositoryName, onWikiLinkClick } = this.props
+
+    // Parse the link: could be "repo:path/to/file.md" or just "path/to/file.md"
+    let targetRepo: string | null = null
+    let targetPath: string = linkPath
+
+    if (linkPath.includes(':')) {
+      const colonIndex = linkPath.indexOf(':')
+      targetRepo = linkPath.substring(0, colonIndex)
+      targetPath = linkPath.substring(colonIndex + 1)
+    }
+
+    // If no repo specified or same repo, open in current repo
+    if (!targetRepo || targetRepo === repositoryName) {
+      // Resolve relative to repository root
+      const fullPath = Path.join(repositoryPath, targetPath)
+      // Open the file in a new tab
+      this.props.onTabSelect(fullPath)
+    } else if (onWikiLinkClick) {
+      // Cross-repo link - let parent handle it
+      onWikiLinkClick(targetRepo, targetPath)
+    }
   }
 
   private onCheckboxToggle = async (index: number, checked: boolean) => {
@@ -773,6 +818,13 @@ export class CodeViewContent extends React.Component<
             title={`Link (${modKey}K)`}
           >
             <Octicon symbol={octicons.link} />
+          </button>
+          <button
+            className="toolbar-button wiki-link-button"
+            onClick={() => this.applyFormatting('wikilink')}
+            title="Wiki Link [[note]]"
+          >
+            <span className="wiki-link-icon">[[</span>
           </button>
         </div>
       </div>

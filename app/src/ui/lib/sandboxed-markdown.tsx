@@ -328,7 +328,10 @@ export class SandboxedMarkdown extends React.PureComponent<
         if (a !== null) {
           ev.preventDefault()
 
-          if (/^https?:/.test(a.protocol)) {
+          // Handle wiki links (wikilink:// protocol)
+          if (a.protocol === 'wikilink:') {
+            this.props.onMarkdownLinkClicked?.(a.href)
+          } else if (/^https?:/.test(a.protocol)) {
             this.props.onMarkdownLinkClicked?.(a.href)
           }
         }
@@ -387,6 +390,33 @@ export class SandboxedMarkdown extends React.PureComponent<
   }
 
   /**
+   * Process wiki-style links [[link]] in HTML content
+   * Converts them to clickable links with wikilink:// protocol
+   */
+  private processWikiLinks(html: string): string {
+    // Match [[...]] patterns that weren't already converted
+    // This handles wiki links in the rendered HTML
+    const wikiLinkPattern = /\[\[([^\]]+)\]\]/g
+
+    return html.replace(wikiLinkPattern, (match, linkContent) => {
+      const encodedPath = encodeURIComponent(linkContent)
+
+      // Extract display name (last part of path, without extension)
+      let displayName = linkContent
+      if (linkContent.includes(':')) {
+        displayName = linkContent.split(':')[1]
+      }
+      if (displayName.includes('/')) {
+        displayName = displayName.split('/').pop() || displayName
+      }
+      // Remove .md extension for display
+      displayName = displayName.replace(/\.md$/i, '')
+
+      return `<a href="wikilink://${encodedPath}" class="wiki-link">${displayName}</a>`
+    })
+  }
+
+  /**
    * Populates the mounted iframe with HTML generated from the provided markdown
    */
   private async mountIframeContents(markdown: string) {
@@ -396,6 +426,9 @@ export class SandboxedMarkdown extends React.PureComponent<
 
     const styleSheet = await this.getInlineStyleSheet()
 
+    // Process wiki links after markdown has been parsed to HTML
+    const processedMarkdown = this.processWikiLinks(markdown)
+
     const src = `
       <html>
         <head>
@@ -404,7 +437,7 @@ export class SandboxedMarkdown extends React.PureComponent<
         </head>
         <body class="markdown-body">
           <div id="content">
-          ${markdown}
+          ${processedMarkdown}
           </div>
         </body>
       </html>
