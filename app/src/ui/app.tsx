@@ -164,7 +164,6 @@ import { PullRequestChecksFailed } from './notifications/pull-request-checks-fai
 import { CICheckRunRerunDialog } from './check-runs/ci-check-run-rerun-dialog'
 import { CreateTaskDialog } from './tasks'
 import { WarnForcePushDialog } from './multi-commit-operation/dialog/warn-force-push-dialog'
-import { clamp } from '../lib/clamp'
 import { generateRepositoryListContextMenu } from './repositories-list/repository-list-item-context-menu'
 import * as ipcRenderer from '../lib/ipc-renderer'
 import { DiscardChangesRetryDialog } from './discard-changes/discard-changes-retry-dialog'
@@ -3509,15 +3508,11 @@ export class App extends React.Component<IAppProps, IAppState> {
       return null
     }
 
-    const width = clamp(this.state.sidebarWidth)
-
     return (
       <Toolbar id="desktop-app-toolbar">
         {this.renderOwnerToolbarButton()}
         {this.renderProjectToolbarButton()}
-        <div className="sidebar-section" style={{ width }}>
-          {this.renderRepositoryToolbarButton()}
-        </div>
+        {this.renderRepositoryToolbarButton()}
         {this.renderBranchToolbarButton()}
         {this.renderPushPullToolbarButton()}
       </Toolbar>
@@ -3651,6 +3646,7 @@ export class App extends React.Component<IAppProps, IAppState> {
         icon={icon}
         title={title}
         description="Project"
+        onClick={this.onProjectButtonClick}
         onDropdownStateChanged={this.onProjectDropdownStateChanged}
         dropdownContentRenderer={this.renderProjectList}
         dropdownState={currentState}
@@ -3658,6 +3654,14 @@ export class App extends React.Component<IAppProps, IAppState> {
         showDisclosureArrow={true}
       />
     )
+  }
+
+  private onProjectButtonClick = () => {
+    // Navigate to project view (toggles it open/closed)
+    const { selectedProject, projectViewOpen } = this.state
+    if (selectedProject) {
+      this.props.dispatcher.setProjectViewOpen(!projectViewOpen)
+    }
   }
 
   private renderProjectList = (): JSX.Element => {

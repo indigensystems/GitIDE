@@ -4,6 +4,20 @@
 
 set -e
 
+# Kill any running instances of the app
+echo "Killing any running instances..."
+case "$(uname -s)" in
+    Darwin)
+        pkill -f "GitHub Desktop" 2>/dev/null || true
+        ;;
+    Linux)
+        pkill -f "github-desktop" 2>/dev/null || true
+        ;;
+    MINGW*|MSYS*|CYGWIN*)
+        taskkill /F /IM "GitHub Desktop.exe" 2>/dev/null || true
+        ;;
+esac
+
 echo "Building production app..."
 npm run build:prod
 
