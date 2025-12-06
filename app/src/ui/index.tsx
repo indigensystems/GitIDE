@@ -381,6 +381,23 @@ ipcRenderer.on('blur', () => {
   dispatcher.setAppFocusState(false)
 })
 
+// Handle system sleep/wake events to gracefully manage connections
+ipcRenderer.on('power-monitor-suspend', () => {
+  log.info('[ui] System suspending, pausing background tasks and connections')
+  // Disable Alive WebSocket connections before sleep
+  aliveStore.setEnabled(false)
+  // Pause background tasks (same as losing focus)
+  dispatcher.setAppFocusState(false)
+})
+
+ipcRenderer.on('power-monitor-resume', () => {
+  log.info('[ui] System resuming, restoring background tasks and connections')
+  // Re-enable Alive WebSocket connections after wake
+  aliveStore.setEnabled(true)
+  // Resume background tasks (same as gaining focus)
+  dispatcher.setAppFocusState(true)
+})
+
 ipcRenderer.on('url-action', (_, action) =>
   dispatcher
     .dispatchURLAction(action)

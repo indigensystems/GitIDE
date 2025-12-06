@@ -137,6 +137,13 @@ process.on('uncaughtException', (error: Error) => {
   handleUncaughtException(error)
 })
 
+process.on('unhandledRejection', (reason: unknown) => {
+  // Convert the reason to an Error object for consistent handling
+  const error = withSourceMappedStack(reason)
+  log.error('[main] Unhandled promise rejection:', error)
+  reportError(error, { ...getExtraErrorContext(), source: 'unhandledRejection' }, true)
+})
+
 let handlingSquirrelEvent = false
 if (__WIN32__ && process.argv.length > 1) {
   const arg = process.argv[1]

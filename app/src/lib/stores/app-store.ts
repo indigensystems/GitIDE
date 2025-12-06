@@ -418,6 +418,7 @@ const imageDiffTypeKey = 'image-diff-type'
 
 const selectedOwnerKey = 'selected-owner'
 const selectedProjectIdKey = 'selected-project-id'
+const selectedSectionTabKey = 'selected-section-tab'
 
 const hideWhitespaceInChangesDiffDefault = false
 const hideWhitespaceInChangesDiffKey = 'hide-whitespace-in-changes-diff'
@@ -2065,6 +2066,18 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     this.addUpstreamRemoteIfNeeded(repository)
 
+    // Restore the saved section tab on repository selection
+    const savedTabStr = localStorage.getItem(selectedSectionTabKey)
+    if (savedTabStr !== null) {
+      const savedTab = parseInt(savedTabStr, 10)
+      if (!isNaN(savedTab) && savedTab in RepositorySectionTab) {
+        this.repositoryStateCache.update(repository, () => ({
+          selectedSection: savedTab as RepositorySectionTab,
+        }))
+        this.emitUpdate()
+      }
+    }
+
     return this.repositoryWithRefreshedGitHubRepository(repository)
   }
 
@@ -3042,6 +3055,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
       }
       return { selectedSection }
     })
+
+    // Persist the selected tab for restoring on app restart
+    localStorage.setItem(selectedSectionTabKey, selectedSection.toString())
+
     this.emitUpdate()
 
     if (selectedSection === RepositorySectionTab.History) {

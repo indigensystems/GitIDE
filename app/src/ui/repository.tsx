@@ -170,13 +170,31 @@ export class RepositoryView extends React.Component<
   public constructor(props: IRepositoryViewProps) {
     super(props)
 
+    // Restore code view tabs from localStorage
+    let openCodeTabs: ReadonlyArray<IOpenTab> = []
+    let activeCodeTab: string | null = null
+
+    try {
+      const savedTabs = localStorage.getItem('code-view-open-tabs')
+      const savedActiveTab = localStorage.getItem('code-view-active-tab')
+
+      if (savedTabs) {
+        openCodeTabs = JSON.parse(savedTabs)
+      }
+      if (savedActiveTab) {
+        activeCodeTab = savedActiveTab
+      }
+    } catch (e) {
+      log.warn('Failed to restore code view tabs from localStorage', e)
+    }
+
     this.state = {
       changesListScrollTop: 0,
       compareListScrollTop: 0,
       selectedTask: null,
       selectedIssueInfo: null,
-      openCodeTabs: [],
-      activeCodeTab: null,
+      openCodeTabs,
+      activeCodeTab,
     }
   }
 
@@ -1046,7 +1064,10 @@ export class RepositoryView extends React.Component<
     window.removeEventListener('keydown', this.onGlobalKeyDown)
   }
 
-  public componentDidUpdate(): void {
+  public componentDidUpdate(
+    prevProps: IRepositoryViewProps,
+    prevState: IRepositoryViewState
+  ): void {
     if (this.focusChangesNeeded) {
       this.focusChangesNeeded = false
       this.changesSidebarRef.current?.focus()
@@ -1055,6 +1076,26 @@ export class RepositoryView extends React.Component<
     if (this.focusHistoryNeeded) {
       this.focusHistoryNeeded = false
       this.compareSidebarRef.current?.focusHistory()
+    }
+
+    // Persist code view tabs to localStorage when they change
+    if (
+      prevState.openCodeTabs !== this.state.openCodeTabs ||
+      prevState.activeCodeTab !== this.state.activeCodeTab
+    ) {
+      try {
+        localStorage.setItem(
+          'code-view-open-tabs',
+          JSON.stringify(this.state.openCodeTabs)
+        )
+        if (this.state.activeCodeTab) {
+          localStorage.setItem('code-view-active-tab', this.state.activeCodeTab)
+        } else {
+          localStorage.removeItem('code-view-active-tab')
+        }
+      } catch (e) {
+        log.warn('Failed to persist code view tabs to localStorage', e)
+      }
     }
   }
 

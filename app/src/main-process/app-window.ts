@@ -5,6 +5,7 @@ import {
   BrowserWindow,
   autoUpdater,
   nativeTheme,
+  powerMonitor,
 } from 'electron'
 import { shell } from '../lib/app-shell'
 import { Emitter, Disposable } from 'event-kit'
@@ -199,6 +200,16 @@ export class AppWindow {
     this.window.on('blur', () =>
       ipcWebContents.send(this.window.webContents, 'blur')
     )
+
+    // Handle system sleep/wake to gracefully manage connections and background tasks
+    powerMonitor.on('suspend', () => {
+      log.info('[AppWindow] System suspending, notifying renderer')
+      ipcWebContents.send(this.window.webContents, 'power-monitor-suspend')
+    })
+    powerMonitor.on('resume', () => {
+      log.info('[AppWindow] System resuming, notifying renderer')
+      ipcWebContents.send(this.window.webContents, 'power-monitor-resume')
+    })
 
     registerWindowStateChangedEvents(this.window)
     this.window.loadURL(encodePathAsUrl(__dirname, 'index.html'))
