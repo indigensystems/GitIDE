@@ -608,3 +608,70 @@
     overflow-y: auto !important;
   }
 }
+
+// Markdown formatting toolbar
+.markdown-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-half);
+  padding: var(--spacing-half) var(--spacing);
+  background: var(--box-alt-background-color);
+  border-bottom: var(--base-border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.toolbar-separator {
+  width: 1px;
+  height: 20px;
+  background: var(--base-border-color, #30363d);
+  margin: 0 var(--spacing-half);
+}
+
+.toolbar-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 var(--spacing-half);
+  border: none;
+  border-radius: var(--border-radius);
+  background: transparent;
+  color: var(--text-color);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+
+  .octicon {
+    width: 16px;
+    height: 16px;
+  }
+
+  &:hover {
+    background: var(--button-background);
+  }
+
+  &:active {
+    background: var(--button-hover-background);
+  }
+
+  strong {
+    font-weight: 700;
+  }
+
+  em {
+    font-style: italic;
+  }
+
+  s {
+    text-decoration: line-through;
+  }
+}

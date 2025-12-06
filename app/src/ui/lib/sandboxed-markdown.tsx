@@ -33,6 +33,13 @@ interface ISandboxedMarkdownProps {
    * been mounted to the iframe */
   readonly onMarkdownParsed?: () => void
 
+  /**
+   * A callback when a task list checkbox is toggled.
+   * @param index The index of the checkbox (0-based)
+   * @param checked The new checked state
+   */
+  readonly onCheckboxToggle?: (index: number, checked: boolean) => void
+
   /** Map from the emoji shortcut (e.g., :+1:) to the image's local path. */
   readonly emoji: Map<string, Emoji>
 
@@ -235,6 +242,7 @@ export class SandboxedMarkdown extends React.PureComponent<
     frameRef.addEventListener('load', () => {
       this.setupContentDivRef(frameRef)
       this.setupLinkInterceptor(frameRef)
+      this.setupCheckboxInterceptor(frameRef)
       this.setupTooltips(frameRef)
       this.setFrameContainerHeight(frameRef)
     })
@@ -324,6 +332,43 @@ export class SandboxedMarkdown extends React.PureComponent<
             this.props.onMarkdownLinkClicked?.(a.href)
           }
         }
+      }
+    })
+  }
+
+  /**
+   * Sets up click interceptor for task list checkboxes to make them interactive
+   */
+  private setupCheckboxInterceptor(frameRef: HTMLIFrameElement): void {
+    if (!this.props.onCheckboxToggle || frameRef.contentDocument === null) {
+      return
+    }
+
+    const { contentWindow } = frameRef
+    if (!contentWindow) {
+      return
+    }
+
+    // Find all task list checkboxes and make them interactive
+    const checkboxes = frameRef.contentDocument.querySelectorAll(
+      'input[type="checkbox"]'
+    )
+
+    checkboxes.forEach((checkbox, index) => {
+      if (checkbox instanceof contentWindow.HTMLElement) {
+        const input = checkbox as HTMLInputElement
+        // Remove the disabled attribute to make it clickable
+        input.removeAttribute('disabled')
+        input.style.cursor = 'pointer'
+
+        input.addEventListener('click', (ev) => {
+          ev.stopPropagation()
+          const target = ev.target as HTMLInputElement
+          // Toggle the visual state immediately
+          const newChecked = target.checked
+          // Notify parent component
+          this.props.onCheckboxToggle?.(index, newChecked)
+        })
       }
     })
   }

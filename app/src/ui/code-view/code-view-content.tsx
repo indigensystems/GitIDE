@@ -264,15 +264,39 @@ export class CodeViewContent extends React.Component<
   }
 
   private onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
+    const modKey = isMac ? event.metaKey : event.ctrlKey
+
     // Save with Cmd/Ctrl + S
-    if ((event.metaKey || event.ctrlKey) && event.key === 's') {
+    if (modKey && event.key === 's') {
       event.preventDefault()
       this.onSaveClick()
+      return
     }
     // Cancel with Escape
     if (event.key === 'Escape') {
       this.onCancelEdit()
+      return
     }
+
+    // Markdown formatting shortcuts (only for markdown files)
+    if (modKey && this.props.activeTab && this.isMarkdownFile(this.props.activeTab)) {
+      switch (event.key.toLowerCase()) {
+        case 'b':
+          event.preventDefault()
+          this.applyFormatting('bold')
+          return
+        case 'i':
+          event.preventDefault()
+          this.applyFormatting('italic')
+          return
+        case 'k':
+          event.preventDefault()
+          this.applyFormatting('link')
+          return
+      }
+    }
+
     // Handle Tab key for indentation
     if (event.key === 'Tab') {
       event.preventDefault()
@@ -290,6 +314,112 @@ export class CodeViewContent extends React.Component<
         this.props.onTabUnsavedChange(this.props.activeTab, true)
       }
     }
+  }
+
+  private applyFormatting = (format: string) => {
+    const textarea = this.textareaRef.current
+    if (!textarea) return
+
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const value = textarea.value
+    const selectedText = value.substring(start, end)
+
+    let newText = ''
+    let cursorOffset = 0
+    let selectAfter = false
+
+    switch (format) {
+      case 'bold':
+        newText = `**${selectedText || 'bold text'}**`
+        cursorOffset = selectedText ? newText.length : 2
+        selectAfter = !selectedText
+        break
+      case 'italic':
+        newText = `*${selectedText || 'italic text'}*`
+        cursorOffset = selectedText ? newText.length : 1
+        selectAfter = !selectedText
+        break
+      case 'strikethrough':
+        newText = `~~${selectedText || 'strikethrough text'}~~`
+        cursorOffset = selectedText ? newText.length : 2
+        selectAfter = !selectedText
+        break
+      case 'code':
+        newText = `\`${selectedText || 'code'}\``
+        cursorOffset = selectedText ? newText.length : 1
+        selectAfter = !selectedText
+        break
+      case 'codeblock':
+        newText = `\`\`\`\n${selectedText || 'code'}\n\`\`\``
+        cursorOffset = selectedText ? newText.length : 4
+        selectAfter = !selectedText
+        break
+      case 'link':
+        if (selectedText) {
+          newText = `[${selectedText}](url)`
+          cursorOffset = newText.length - 4 // Position cursor at 'url'
+        } else {
+          newText = `[link text](url)`
+          cursorOffset = 1 // Position cursor after [
+          selectAfter = true
+        }
+        break
+      case 'h1':
+        newText = this.applyLinePrefix('# ', selectedText)
+        cursorOffset = newText.length
+        break
+      case 'h2':
+        newText = this.applyLinePrefix('## ', selectedText)
+        cursorOffset = newText.length
+        break
+      case 'h3':
+        newText = this.applyLinePrefix('### ', selectedText)
+        cursorOffset = newText.length
+        break
+      case 'ul':
+        newText = this.applyLinePrefix('- ', selectedText)
+        cursorOffset = newText.length
+        break
+      case 'ol':
+        newText = this.applyLinePrefix('1. ', selectedText)
+        cursorOffset = newText.length
+        break
+      case 'task':
+        newText = this.applyLinePrefix('- [ ] ', selectedText)
+        cursorOffset = newText.length
+        break
+      case 'quote':
+        newText = this.applyLinePrefix('> ', selectedText)
+        cursorOffset = newText.length
+        break
+      default:
+        return
+    }
+
+    const newValue = value.substring(0, start) + newText + value.substring(end)
+    this.setState({ editedContent: newValue }, () => {
+      textarea.focus()
+      if (selectAfter && !selectedText) {
+        // Select the placeholder text
+        textarea.selectionStart = start + cursorOffset
+        textarea.selectionEnd = start + newText.length - cursorOffset
+      } else {
+        textarea.selectionStart = textarea.selectionEnd = start + cursorOffset
+      }
+    })
+
+    if (this.props.activeTab) {
+      this.props.onTabUnsavedChange(this.props.activeTab, true)
+    }
+  }
+
+  private applyLinePrefix(prefix: string, text: string): string {
+    if (!text) {
+      return prefix + 'text'
+    }
+    // Apply prefix to each line
+    return text.split('\n').map(line => prefix + line).join('\n')
   }
 
   private onTabClick = (filePath: string) => {
@@ -444,6 +574,50 @@ export class CodeViewContent extends React.Component<
     shell.openExternal(url)
   }
 
+  private onCheckboxToggle = async (index: number, checked: boolean) => {
+    const { activeTab } = this.props
+    const { content } = this.state
+
+    if (!activeTab || content === null) {
+      return
+    }
+
+    // Find all checkbox patterns in the markdown: - [ ] or - [x] or * [ ] or * [x]
+    // Also handles numbered lists: 1. [ ] or 1. [x]
+    const checkboxPattern = /^(\s*(?:[-*]|\d+\.)\s*)\[([ xX])\]/gm
+    let match: RegExpExecArray | null
+    let currentIndex = 0
+    let newContent = content
+
+    while ((match = checkboxPattern.exec(content)) !== null) {
+      if (currentIndex === index) {
+        const prefix = match[1]
+        const currentState = match[2]
+        const newState = checked ? 'x' : ' '
+
+        // Only update if state actually changed
+        if ((currentState === ' ' && checked) || (currentState !== ' ' && !checked)) {
+          const before = content.slice(0, match.index)
+          const after = content.slice(match.index + match[0].length)
+          newContent = `${before}${prefix}[${newState}]${after}`
+
+          // Save the file
+          try {
+            await FSE.writeFile(activeTab, newContent, 'utf8')
+            // Update the state with new content
+            this.setState({ content: newContent })
+            // Update cache
+            this.contentCache.set(activeTab, { content: newContent, isBinary: false, error: null })
+          } catch (error) {
+            console.error('Failed to save checkbox state:', error)
+          }
+        }
+        break
+      }
+      currentIndex++
+    }
+  }
+
   private renderMarkdownContent() {
     const { activeTab, emoji, repositoryPath } = this.props
     const { content, isEditing } = this.state
@@ -481,9 +655,125 @@ export class CodeViewContent extends React.Component<
             emoji={emoji}
             baseHref={baseHref}
             onMarkdownLinkClicked={this.onMarkdownLinkClicked}
+            onCheckboxToggle={this.onCheckboxToggle}
             underlineLinks={true}
             ariaLabel={`Markdown content of ${Path.basename(activeTab)}`}
           />
+        </div>
+      </div>
+    )
+  }
+
+  private renderMarkdownToolbar() {
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
+    const modKey = isMac ? '⌘' : 'Ctrl+'
+
+    return (
+      <div className="markdown-toolbar">
+        <div className="toolbar-group">
+          <button
+            className="toolbar-button"
+            onClick={() => this.applyFormatting('bold')}
+            title={`Bold (${modKey}B)`}
+          >
+            <strong>B</strong>
+          </button>
+          <button
+            className="toolbar-button"
+            onClick={() => this.applyFormatting('italic')}
+            title={`Italic (${modKey}I)`}
+          >
+            <em>I</em>
+          </button>
+          <button
+            className="toolbar-button"
+            onClick={() => this.applyFormatting('strikethrough')}
+            title="Strikethrough"
+          >
+            <s>S</s>
+          </button>
+        </div>
+        <div className="toolbar-separator" />
+        <div className="toolbar-group">
+          <button
+            className="toolbar-button"
+            onClick={() => this.applyFormatting('h1')}
+            title="Heading 1"
+          >
+            H1
+          </button>
+          <button
+            className="toolbar-button"
+            onClick={() => this.applyFormatting('h2')}
+            title="Heading 2"
+          >
+            H2
+          </button>
+          <button
+            className="toolbar-button"
+            onClick={() => this.applyFormatting('h3')}
+            title="Heading 3"
+          >
+            H3
+          </button>
+        </div>
+        <div className="toolbar-separator" />
+        <div className="toolbar-group">
+          <button
+            className="toolbar-button"
+            onClick={() => this.applyFormatting('ul')}
+            title="Bullet List"
+          >
+            <Octicon symbol={octicons.listUnordered} />
+          </button>
+          <button
+            className="toolbar-button"
+            onClick={() => this.applyFormatting('ol')}
+            title="Numbered List"
+          >
+            <Octicon symbol={octicons.listOrdered} />
+          </button>
+          <button
+            className="toolbar-button"
+            onClick={() => this.applyFormatting('task')}
+            title="Task List"
+          >
+            <Octicon symbol={octicons.tasklist} />
+          </button>
+        </div>
+        <div className="toolbar-separator" />
+        <div className="toolbar-group">
+          <button
+            className="toolbar-button"
+            onClick={() => this.applyFormatting('code')}
+            title="Inline Code"
+          >
+            <Octicon symbol={octicons.code} />
+          </button>
+          <button
+            className="toolbar-button"
+            onClick={() => this.applyFormatting('codeblock')}
+            title="Code Block"
+          >
+            <Octicon symbol={octicons.fileCode} />
+          </button>
+          <button
+            className="toolbar-button"
+            onClick={() => this.applyFormatting('quote')}
+            title="Quote"
+          >
+            <Octicon symbol={octicons.quote} />
+          </button>
+        </div>
+        <div className="toolbar-separator" />
+        <div className="toolbar-group">
+          <button
+            className="toolbar-button"
+            onClick={() => this.applyFormatting('link')}
+            title={`Link (${modKey}K)`}
+          >
+            <Octicon symbol={octicons.link} />
+          </button>
         </div>
       </div>
     )
@@ -495,6 +785,7 @@ export class CodeViewContent extends React.Component<
     const lines = editedContent.split('\n')
     const currentTab = openTabs.find(t => t.filePath === activeTab)
     const hasUnsavedChanges = currentTab?.hasUnsavedChanges ?? false
+    const isMarkdown = activeTab ? this.isMarkdownFile(activeTab) : false
 
     return (
       <div className="code-view-content editing">
@@ -523,6 +814,7 @@ export class CodeViewContent extends React.Component<
             </button>
           </div>
         </div>
+        {isMarkdown && this.renderMarkdownToolbar()}
         <div className="editor-container">
           <div className="line-numbers">
             {lines.map((_, i) => (
