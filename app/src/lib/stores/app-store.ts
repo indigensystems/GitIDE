@@ -8868,26 +8868,6 @@ export class AppStore extends TypedBaseStore<IAppState> {
           console.log(`[_setSelectedOwner] Fetched ${this.ownerProjects.length} projects`, this.ownerProjects)
           log.info(`[_setSelectedOwner] Fetched ${this.ownerProjects.length} projects`)
 
-          // Restore saved project selection if it exists in the fetched projects
-          const savedProjectId = localStorage.getItem(selectedProjectIdKey)
-          if (savedProjectId && this.ownerProjects.length > 0) {
-            const savedProject = this.ownerProjects.find(p => p.id === savedProjectId)
-            if (savedProject) {
-              log.info(`[_setSelectedOwner] Restoring saved project: ${savedProject.title}`)
-              await this._setSelectedProject(savedProject)
-
-              // Fetch project details to set default iteration filter
-              const projectDetails = await api.fetchProjectDetails(savedProject.id)
-              if (projectDetails) {
-                const currentIteration = findCurrentIterationTitle(projectDetails.fields)
-                if (currentIteration) {
-                  log.info(`[_setSelectedOwner] Setting default iteration to: ${currentIteration}`)
-                  await this.tasksStore.setIterationFilter(currentIteration)
-                }
-              }
-            }
-          }
-
           // Fetch repositories for the owner
           if (owner === account.login) {
             log.info(`[_setSelectedOwner] Fetching user repos for ${owner}`)
@@ -8897,9 +8877,44 @@ export class AppStore extends TypedBaseStore<IAppState> {
             this.ownerRepositories = await api.fetchOrgRepos(owner)
           }
         } else {
-          // "All owners" - fetch all repos accessible by the user
-          log.info(`[_setSelectedOwner] Fetching all repos for all owners`)
+          // "All owners" - fetch projects and repos from all owners
+          log.info(`[_setSelectedOwner] Fetching all projects and repos for all owners`)
+
+          // Fetch projects from user and all organizations in parallel
+          const projectPromises: Promise<ReadonlyArray<IAPIProjectV2>>[] = [
+            api.fetchOwnerProjects(account.login).catch(() => []),
+          ]
+          for (const org of this.organizations) {
+            projectPromises.push(api.fetchOwnerProjects(org.login).catch(() => []))
+          }
+          const allProjectArrays = await Promise.all(projectPromises)
+          this.ownerProjects = allProjectArrays.flat()
+          // eslint-disable-next-line no-console
+          console.log(`[_setSelectedOwner] Fetched ${this.ownerProjects.length} total projects from all owners`)
+          log.info(`[_setSelectedOwner] Fetched ${this.ownerProjects.length} total projects from all owners`)
+
+          // Fetch all repos accessible by the user
           this.ownerRepositories = await api.fetchUserRepos()
+        }
+
+        // Restore saved project selection if it exists in the fetched projects
+        const savedProjectId = localStorage.getItem(selectedProjectIdKey)
+        if (savedProjectId && this.ownerProjects.length > 0) {
+          const savedProject = this.ownerProjects.find(p => p.id === savedProjectId)
+          if (savedProject) {
+            log.info(`[_setSelectedOwner] Restoring saved project: ${savedProject.title}`)
+            await this._setSelectedProject(savedProject)
+
+            // Fetch project details to set default iteration filter
+            const projectDetails = await api.fetchProjectDetails(savedProject.id)
+            if (projectDetails) {
+              const currentIteration = findCurrentIterationTitle(projectDetails.fields)
+              if (currentIteration) {
+                log.info(`[_setSelectedOwner] Setting default iteration to: ${currentIteration}`)
+                await this.tasksStore.setIterationFilter(currentIteration)
+              }
+            }
+          }
         }
         log.info(`[_setSelectedOwner] Fetched ${this.ownerRepositories.length} repositories`)
       } catch (e) {

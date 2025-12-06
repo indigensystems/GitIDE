@@ -3003,29 +3003,27 @@ export class App extends React.Component<IAppProps, IAppState> {
     const { useCustomShell, selectedShell, selectedOwner, ownerRepositories, loadingOwnerRepos } = this.state
     const filterText = this.state.repositoryFilterText
 
-    // If an owner is selected, show GitHub repos from that owner
-    if (selectedOwner) {
-      const account = this.state.accounts.find(a => a.endpoint === getDotComAPIEndpoint())
-      if (account) {
-        const localRepos = this.getLocalRepositoryInfos()
-        return (
-          <CloneableRepositoryFilterList
-            account={account}
-            selectedItem={this.state.selectedAPIRepository}
-            onSelectionChanged={this.onAPIRepositorySelectionChanged}
-            repositories={ownerRepositories.length > 0 ? ownerRepositories : null}
-            loading={loadingOwnerRepos}
-            filterText={filterText}
-            onFilterTextChanged={this.onRepositoryFilterTextChanged}
-            onRefreshRepositories={this.onRefreshOwnerRepositories}
-            onItemClicked={this.onAPIRepositoryClicked}
-            localRepositories={localRepos}
-            onCloneRepository={this.onCloneAPIRepository}
-            onLocateRepository={this.onLocateRepository}
-            onAddExistingRepository={this.onAddExistingRepository}
-          />
-        )
-      }
+    // Show GitHub repos when an owner is selected OR when "All Owners" with repos loaded
+    const account = this.state.accounts.find(a => a.endpoint === getDotComAPIEndpoint())
+    if (account && (selectedOwner || ownerRepositories.length > 0 || loadingOwnerRepos)) {
+      const localRepos = this.getLocalRepositoryInfos()
+      return (
+        <CloneableRepositoryFilterList
+          account={account}
+          selectedItem={this.state.selectedAPIRepository}
+          onSelectionChanged={this.onAPIRepositorySelectionChanged}
+          repositories={ownerRepositories.length > 0 ? ownerRepositories : null}
+          loading={loadingOwnerRepos}
+          filterText={filterText}
+          onFilterTextChanged={this.onRepositoryFilterTextChanged}
+          onRefreshRepositories={this.onRefreshOwnerRepositories}
+          onItemClicked={this.onAPIRepositoryClicked}
+          localRepositories={localRepos}
+          onCloneRepository={this.onCloneAPIRepository}
+          onLocateRepository={this.onLocateRepository}
+          onAddExistingRepository={this.onAddExistingRepository}
+        />
+      )
     }
 
     // Default: show local repositories
@@ -3173,7 +3171,13 @@ export class App extends React.Component<IAppProps, IAppState> {
     if (repository) {
       const alias = repository instanceof Repository ? repository.alias : null
       icon = iconForRepository(repository)
-      title = alias ?? repository.name
+      const repoName = alias ?? repository.name
+      // Show owner/repo format when "All Owners" is selected
+      if (!this.state.selectedOwner && repository instanceof Repository && repository.gitHubRepository) {
+        title = `${repository.gitHubRepository.owner.login}/${repoName}`
+      } else {
+        title = repoName
+      }
     } else if (this.state.repositories.length > 0) {
       icon = octicons.repo
       title = __DARWIN__ ? 'Select a Repository' : 'Select a repository'
@@ -3633,17 +3637,18 @@ export class App extends React.Component<IAppProps, IAppState> {
   }
 
   private renderProjectToolbarButton() {
-    const { selectedProject, selectedOwner, currentFoldout } = this.state
-
-    // Only show if an owner is selected
-    if (!selectedOwner) {
-      return null
-    }
+    const { selectedProject, currentFoldout } = this.state
 
     const isOpen = currentFoldout?.type === FoldoutType.Project
     const currentState: DropdownState = isOpen ? 'open' : 'closed'
 
-    const title = selectedProject?.title || 'All Projects'
+    // Show owner in title when a project is selected
+    let title = 'All Projects'
+    if (selectedProject) {
+      title = selectedProject.owner
+        ? `${selectedProject.owner}/${selectedProject.title}`
+        : selectedProject.title
+    }
     const icon = octicons.project
 
     return (
@@ -3671,18 +3676,29 @@ export class App extends React.Component<IAppProps, IAppState> {
   }
 
   private renderProjectList = (): JSX.Element => {
-    const { selectedProject, ownerProjects, projectFilterText } = this.state
-
-    const items: Array<{ id: string; title: string; project: IAPIProjectV2 | null }> = [
-      { id: '', title: 'All Projects', project: null },
-      ...ownerProjects.map(p => ({ id: p.id, title: p.title, project: p })),
-    ]
+    const { selectedProject, ownerProjects, projectFilterText, selectedOwner } = this.state
 
     // Filter items based on filter text
     const filterText = projectFilterText?.toLowerCase() || ''
-    const filteredItems = filterText
-      ? items.filter(item => item.title.toLowerCase().includes(filterText))
-      : items
+    const filteredProjects = filterText
+      ? ownerProjects.filter(p =>
+          p.title.toLowerCase().includes(filterText) ||
+          (p.owner?.toLowerCase() || '').includes(filterText)
+        )
+      : ownerProjects
+
+    // Group projects by owner when showing all owners
+    const groupedProjects = new Map<string, IAPIProjectV2[]>()
+    for (const project of filteredProjects) {
+      const owner = project.owner || 'Unknown'
+      if (!groupedProjects.has(owner)) {
+        groupedProjects.set(owner, [])
+      }
+      groupedProjects.get(owner)!.push(project)
+    }
+
+    // Sort owners alphabetically
+    const sortedOwners = Array.from(groupedProjects.keys()).sort()
 
     return (
       <div className="project-dropdown-list">
@@ -3695,22 +3711,56 @@ export class App extends React.Component<IAppProps, IAppState> {
           autoFocus
         />
         <div className="project-dropdown-items">
-          {filteredItems.map(item => {
-            const isSelected =
-              (item.project === null && selectedProject === null) ||
-              (item.project !== null && selectedProject !== null && item.project.id === selectedProject.id)
-            return (
-              <button
-                key={item.id}
-                className={`project-dropdown-item ${isSelected ? 'selected' : ''}`}
-                onClick={() => this.onProjectSelected(item.project)}
-                type="button"
-              >
-                <span className="project-name">{item.title}</span>
-                {isSelected && <Octicon symbol={octicons.check} />}
-              </button>
-            )
-          })}
+          {/* All Projects option */}
+          <button
+            key="all-projects"
+            className={`project-dropdown-item ${selectedProject === null ? 'selected' : ''}`}
+            onClick={() => this.onProjectSelected(null)}
+            type="button"
+          >
+            <span className="project-name">All Projects</span>
+            {selectedProject === null && <Octicon symbol={octicons.check} />}
+          </button>
+
+          {/* Show projects grouped by owner when "All Owners" is selected, otherwise flat list */}
+          {!selectedOwner ? (
+            // Grouped by owner
+            sortedOwners.map(owner => (
+              <div key={owner} className="project-owner-group">
+                <div className="project-owner-header">{owner}</div>
+                {groupedProjects.get(owner)!.map(project => {
+                  const isSelected = selectedProject?.id === project.id
+                  return (
+                    <button
+                      key={project.id}
+                      className={`project-dropdown-item ${isSelected ? 'selected' : ''}`}
+                      onClick={() => this.onProjectSelected(project)}
+                      type="button"
+                    >
+                      <span className="project-name">{project.title}</span>
+                      {isSelected && <Octicon symbol={octicons.check} />}
+                    </button>
+                  )
+                })}
+              </div>
+            ))
+          ) : (
+            // Flat list when specific owner is selected
+            filteredProjects.map(project => {
+              const isSelected = selectedProject?.id === project.id
+              return (
+                <button
+                  key={project.id}
+                  className={`project-dropdown-item ${isSelected ? 'selected' : ''}`}
+                  onClick={() => this.onProjectSelected(project)}
+                  type="button"
+                >
+                  <span className="project-name">{project.title}</span>
+                  {isSelected && <Octicon symbol={octicons.check} />}
+                </button>
+              )
+            })
+          )}
         </div>
       </div>
     )

@@ -105,6 +105,32 @@
         color: var(--text-color);
       }
     }
+
+    // Owner group headers for "All Owners" view
+    .project-owner-group,
+    .repo-owner-group {
+      .project-owner-header,
+      .repo-owner-header {
+        padding: var(--spacing-half) var(--spacing);
+        font-size: var(--font-size-sm);
+        font-weight: 600;
+        color: var(--text-secondary-color);
+        background-color: var(--box-alt-background-color);
+        border-top: 1px solid var(--box-border-color);
+        position: sticky;
+        top: 0;
+        z-index: 1;
+
+        &:first-child {
+          border-top: none;
+        }
+      }
+
+      .project-dropdown-item,
+      .repo-dropdown-item {
+        padding-left: var(--spacing-double);
+      }
+    }
   }
 
   .toolbar-button {

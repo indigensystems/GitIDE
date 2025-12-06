@@ -412,6 +412,8 @@ export interface IAPIProjectV2 {
   readonly title: string
   readonly url: string
   readonly fields: ReadonlyArray<IAPIProjectField>
+  /** The owner (user or org) this project belongs to */
+  readonly owner?: string
 }
 
 /** Field value types for GitHub Projects V2 */
@@ -1874,6 +1876,7 @@ export class API {
       number: p.number,
       title: p.title,
       url: p.url,
+      owner,
       fields: (p.fields?.nodes ?? []).map((f: any) => ({
         id: f.id,
         name: f.name,
