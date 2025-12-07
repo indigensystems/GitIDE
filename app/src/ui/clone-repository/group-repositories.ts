@@ -9,6 +9,9 @@ import { caseInsensitiveEquals, compare } from '../../lib/compare'
 /** The identifier for the "Your Repositories" grouping. */
 export const YourRepositoriesIdentifier = 'your-repositories'
 
+/** The identifier for the "Local Repositories" grouping (local-only, not on GitHub). */
+export const LocalRepositoriesIdentifier = 'local-repositories'
+
 export interface ICloneableRepositoryListItem extends IFilterListItem {
   /** The identifier for the item. */
   readonly id: string
@@ -33,6 +36,12 @@ export interface ICloneableRepositoryListItem extends IFilterListItem {
 
   /** The local path of the repository if cloned */
   readonly localPath?: string
+
+  /** Whether this is a local-only repository (not associated with GitHub) */
+  readonly isLocalOnly?: boolean
+
+  /** The local repository ID (for local-only repos) */
+  readonly localRepoId?: number
 }
 
 function getIcon(gitHubRepo: IAPIRepository): OcticonSymbol {
@@ -50,6 +59,16 @@ function getIcon(gitHubRepo: IAPIRepository): OcticonSymbol {
 export interface ILocalRepoInfo {
   /** The full name (owner/repo) of the GitHub repository */
   readonly fullName: string
+  /** The local path of the repository */
+  readonly path: string
+}
+
+/** Info about a local-only repository (not associated with GitHub) */
+export interface ILocalOnlyRepoInfo {
+  /** The repository ID in the local database */
+  readonly id: number
+  /** The name of the repository (directory name or alias) */
+  readonly name: string
   /** The local path of the repository */
   readonly path: string
 }
@@ -87,7 +106,8 @@ const toListItems = (
 export function groupRepositories(
   repositories: ReadonlyArray<IAPIRepository>,
   login: string,
-  localRepos?: ReadonlyArray<ILocalRepoInfo>
+  localRepos?: ReadonlyArray<ILocalRepoInfo>,
+  localOnlyRepos?: ReadonlyArray<ILocalOnlyRepoInfo>
 ): ReadonlyArray<IFilterListGroup<ICloneableRepositoryListItem>> {
   const groups = groupBy(repositories, x =>
     caseInsensitiveEquals(x.owner.login, login)
@@ -95,7 +115,7 @@ export function groupRepositories(
       : x.owner.login
   )
 
-  return entries(groups)
+  const result = entries(groups)
     .map(([identifier, repos]) => ({
       identifier,
       items: toListItems(repos, localRepos),
@@ -109,4 +129,28 @@ export function groupRepositories(
         return compare(x.identifier, y.identifier)
       }
     })
+
+  // Add local-only repositories as a separate group at the top
+  if (localOnlyRepos && localOnlyRepos.length > 0) {
+    const localOnlyItems: ICloneableRepositoryListItem[] = localOnlyRepos
+      .map(repo => ({
+        id: `local-${repo.id}`,
+        text: [repo.name],
+        name: repo.name,
+        icon: octicons.fileDirectory,
+        url: '',
+        isCloned: true,
+        localPath: repo.path,
+        isLocalOnly: true,
+        localRepoId: repo.id,
+      }))
+      .sort((x, y) => compare(x.name, y.name))
+
+    result.unshift({
+      identifier: LocalRepositoriesIdentifier,
+      items: localOnlyItems,
+    })
+  }
+
+  return result
 }

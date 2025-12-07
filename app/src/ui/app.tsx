@@ -83,7 +83,7 @@ import { MissingRepository } from './missing-repository'
 import { AddExistingRepository, CreateRepository, AddRepositoryDialog } from './add-repository'
 import { CloneRepository } from './clone-repository'
 import { CloneableRepositoryFilterList } from './clone-repository/cloneable-repository-filter-list'
-import { ILocalRepoInfo } from './clone-repository/group-repositories'
+import { ILocalRepoInfo, ILocalOnlyRepoInfo } from './clone-repository/group-repositories'
 import { CreateBranch } from './create-branch'
 import { SignIn } from './sign-in'
 import { InstallGit } from './install-git'
@@ -2971,6 +2971,33 @@ export class App extends React.Component<IAppProps, IAppState> {
     return localRepos
   }
 
+  private getLocalOnlyRepositories = (): ReadonlyArray<ILocalOnlyRepoInfo> => {
+    const localOnlyRepos: ILocalOnlyRepoInfo[] = []
+    for (const repo of this.state.repositories) {
+      // Local-only repos are Repository instances without a gitHubRepository
+      if (repo instanceof Repository && !repo.gitHubRepository) {
+        localOnlyRepos.push({
+          id: repo.id,
+          name: repo.alias || repo.name,
+          path: repo.path,
+        })
+      }
+    }
+    return localOnlyRepos
+  }
+
+  private onLocalOnlyRepositoryClicked = (repoId: number) => {
+    // Find the local-only repository by ID
+    const localRepo = this.state.repositories.find(
+      r => r instanceof Repository && r.id === repoId
+    )
+
+    if (localRepo) {
+      this.onSelectionChanged(localRepo)
+      this.props.dispatcher.closeFoldout(FoldoutType.Repository)
+    }
+  }
+
   private onCloneAPIRepository = (repo: IAPIRepository) => {
     this.props.dispatcher.closeFoldout(FoldoutType.Repository)
     this.showCloneRepo(repo.clone_url)
@@ -3020,6 +3047,7 @@ export class App extends React.Component<IAppProps, IAppState> {
     const account = this.state.accounts.find(a => a.endpoint === getDotComAPIEndpoint())
     if (account && (selectedOwner || ownerRepositories.length > 0 || loadingOwnerRepos)) {
       const localRepos = this.getLocalRepositoryInfos()
+      const localOnlyRepos = this.getLocalOnlyRepositories()
       return (
         <CloneableRepositoryFilterList
           account={account}
@@ -3032,6 +3060,8 @@ export class App extends React.Component<IAppProps, IAppState> {
           onRefreshRepositories={this.onRefreshOwnerRepositories}
           onItemClicked={this.onAPIRepositoryClicked}
           localRepositories={localRepos}
+          localOnlyRepositories={localOnlyRepos}
+          onLocalOnlyRepositoryClicked={this.onLocalOnlyRepositoryClicked}
           onCloneRepository={this.onCloneAPIRepository}
           onLocateRepository={this.onLocateRepository}
           onAddExistingRepository={this.onAddExistingRepository}
