@@ -43,6 +43,9 @@ export class CodeViewSidebar extends React.Component<
   ICodeViewSidebarState
 > {
   private newItemInputRef = React.createRef<HTMLInputElement>()
+  private fileWatcher: fs.FSWatcher | null = null
+  private refreshDebounceTimer: NodeJS.Timeout | null = null
+  private readonly REFRESH_DEBOUNCE_MS = 300
 
   public constructor(props: ICodeViewSidebarProps) {
     super(props)
@@ -59,12 +62,62 @@ export class CodeViewSidebar extends React.Component<
 
   public componentDidMount() {
     this.loadFileTree()
+    this.startFileWatcher()
   }
 
   public componentDidUpdate(prevProps: ICodeViewSidebarProps) {
     if (prevProps.repositoryPath !== this.props.repositoryPath) {
+      this.stopFileWatcher()
       this.loadFileTree()
+      this.startFileWatcher()
     }
+  }
+
+  public componentWillUnmount() {
+    this.stopFileWatcher()
+    if (this.refreshDebounceTimer) {
+      clearTimeout(this.refreshDebounceTimer)
+    }
+  }
+
+  private startFileWatcher() {
+    try {
+      // Watch the repository directory recursively for changes
+      this.fileWatcher = fs.watch(
+        this.props.repositoryPath,
+        { recursive: true },
+        (eventType, filename) => {
+          // Skip hidden files and node_modules
+          if (filename && (filename.startsWith('.') || filename.includes('node_modules'))) {
+            return
+          }
+          this.debouncedRefresh()
+        }
+      )
+
+      this.fileWatcher.on('error', (error) => {
+        console.error('File watcher error:', error)
+      })
+    } catch (error) {
+      console.error('Failed to start file watcher:', error)
+    }
+  }
+
+  private stopFileWatcher() {
+    if (this.fileWatcher) {
+      this.fileWatcher.close()
+      this.fileWatcher = null
+    }
+  }
+
+  private debouncedRefresh = () => {
+    // Debounce refresh to avoid excessive reloading when multiple files change
+    if (this.refreshDebounceTimer) {
+      clearTimeout(this.refreshDebounceTimer)
+    }
+    this.refreshDebounceTimer = setTimeout(() => {
+      this.loadFileTree()
+    }, this.REFRESH_DEBOUNCE_MS)
   }
 
   /** Refresh the file tree (call after creating/deleting files) */
