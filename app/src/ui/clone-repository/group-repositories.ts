@@ -12,6 +12,9 @@ export const YourRepositoriesIdentifier = 'your-repositories'
 /** The identifier for the "Local Repositories" grouping (local-only, not on GitHub). */
 export const LocalRepositoriesIdentifier = 'local-repositories'
 
+/** The identifier for the "Recent" grouping. */
+export const RecentRepositoriesIdentifier = 'recent-repositories'
+
 export interface ICloneableRepositoryListItem extends IFilterListItem {
   /** The identifier for the item. */
   readonly id: string
@@ -107,7 +110,9 @@ export function groupRepositories(
   repositories: ReadonlyArray<IAPIRepository>,
   login: string,
   localRepos?: ReadonlyArray<ILocalRepoInfo>,
-  localOnlyRepos?: ReadonlyArray<ILocalOnlyRepoInfo>
+  localOnlyRepos?: ReadonlyArray<ILocalOnlyRepoInfo>,
+  recentRepos?: ReadonlyArray<IAPIRepository>,
+  recentLocalOnlyRepos?: ReadonlyArray<ILocalOnlyRepoInfo>
 ): ReadonlyArray<IFilterListGroup<ICloneableRepositoryListItem>> {
   const groups = groupBy(repositories, x =>
     caseInsensitiveEquals(x.owner.login, login)
@@ -130,7 +135,7 @@ export function groupRepositories(
       }
     })
 
-  // Add local-only repositories as a separate group at the top
+  // Add local-only repositories as a separate group
   if (localOnlyRepos && localOnlyRepos.length > 0) {
     const localOnlyItems: ICloneableRepositoryListItem[] = localOnlyRepos
       .map(repo => ({
@@ -149,6 +154,41 @@ export function groupRepositories(
     result.unshift({
       identifier: LocalRepositoriesIdentifier,
       items: localOnlyItems,
+    })
+  }
+
+  // Add recent repositories at the very top (both GitHub and local-only)
+  const hasRecentGitHub = recentRepos && recentRepos.length > 0
+  const hasRecentLocalOnly = recentLocalOnlyRepos && recentLocalOnlyRepos.length > 0
+
+  if (hasRecentGitHub || hasRecentLocalOnly) {
+    const recentItems: ICloneableRepositoryListItem[] = []
+
+    // Add recent local-only repos first (they maintain their order from recentRepositories)
+    if (recentLocalOnlyRepos) {
+      for (const repo of recentLocalOnlyRepos) {
+        recentItems.push({
+          id: `local-${repo.id}`,
+          text: [repo.name],
+          name: repo.name,
+          icon: octicons.fileDirectory,
+          url: '',
+          isCloned: true,
+          localPath: repo.path,
+          isLocalOnly: true,
+          localRepoId: repo.id,
+        })
+      }
+    }
+
+    // Add recent GitHub repos (they also maintain their order)
+    if (recentRepos) {
+      recentItems.push(...toListItems(recentRepos, localRepos))
+    }
+
+    result.unshift({
+      identifier: RecentRepositoriesIdentifier,
+      items: recentItems,
     })
   }
 

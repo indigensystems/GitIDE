@@ -5,16 +5,32 @@
 set -e
 
 # Kill any running instances of the app
-echo "Killing any running instances..."
+echo "Checking for running instances..."
 case "$(uname -s)" in
     Darwin)
-        pkill -f "GitHub Desktop" 2>/dev/null || true
+        # Check if app is running and kill it
+        if pgrep -f "GitHub Desktop" > /dev/null 2>&1; then
+            echo "Closing GitHub Desktop..."
+            # Try graceful quit first
+            osascript -e 'quit app "GitHub Desktop"' 2>/dev/null || true
+            osascript -e 'quit app "GitHub Desktop Dev"' 2>/dev/null || true
+            sleep 1
+            # Force kill if still running
+            pkill -9 -f "GitHub Desktop" 2>/dev/null || true
+            sleep 1
+        fi
         ;;
     Linux)
-        pkill -f "github-desktop" 2>/dev/null || true
+        if pgrep -f "github-desktop" > /dev/null 2>&1; then
+            echo "Closing GitHub Desktop..."
+            pkill -9 -f "github-desktop" 2>/dev/null || true
+            sleep 1
+        fi
         ;;
     MINGW*|MSYS*|CYGWIN*)
         taskkill /F /IM "GitHub Desktop.exe" 2>/dev/null || true
+        taskkill /F /IM "GitHub Desktop Dev.exe" 2>/dev/null || true
+        sleep 1
         ;;
 esac
 

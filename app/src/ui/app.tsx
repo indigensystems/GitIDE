@@ -2986,6 +2986,65 @@ export class App extends React.Component<IAppProps, IAppState> {
     return localOnlyRepos
   }
 
+  private getRecentAPIRepositories = (selectedOwner: string | null): ReadonlyArray<IAPIRepository> => {
+    const { ownerRepositories, recentRepositories, repositories } = this.state
+    const MAX_RECENT = 5
+
+    // Build a map of ownerRepositories by fullName for quick lookup
+    const apiRepoMap = new Map<string, IAPIRepository>()
+    for (const apiRepo of ownerRepositories) {
+      const fullName = `${apiRepo.owner.login}/${apiRepo.name}`.toLowerCase()
+      apiRepoMap.set(fullName, apiRepo)
+    }
+
+    // Iterate through recent repos in order (maintains recency order)
+    const result: IAPIRepository[] = []
+    for (const repoId of recentRepositories) {
+      if (result.length >= MAX_RECENT) break
+
+      const repo = repositories.find(r => r.id === repoId)
+      if (!(repo instanceof Repository) || !repo.gitHubRepository) {
+        continue // Skip non-GitHub repos (handled separately)
+      }
+
+      const fullName = repo.gitHubRepository.fullName.toLowerCase()
+      const apiRepo = apiRepoMap.get(fullName)
+
+      if (!apiRepo) continue // Not in ownerRepositories (not loaded yet)
+
+      // Filter by owner if one is selected
+      if (selectedOwner && apiRepo.owner.login.toLowerCase() !== selectedOwner.toLowerCase()) {
+        continue
+      }
+
+      result.push(apiRepo)
+    }
+
+    return result
+  }
+
+  private getRecentLocalOnlyRepositories = (): ReadonlyArray<ILocalOnlyRepoInfo> => {
+    const { recentRepositories, repositories } = this.state
+    const MAX_RECENT = 5
+
+    const result: ILocalOnlyRepoInfo[] = []
+    for (const repoId of recentRepositories) {
+      if (result.length >= MAX_RECENT) break
+
+      const repo = repositories.find(r => r.id === repoId)
+      // Only include local-only repos (no gitHubRepository)
+      if (repo instanceof Repository && !repo.gitHubRepository) {
+        result.push({
+          id: repo.id,
+          name: repo.alias || repo.name,
+          path: repo.path,
+        })
+      }
+    }
+
+    return result
+  }
+
   private onLocalOnlyRepositoryClicked = (repoId: number) => {
     // Find the local-only repository by ID
     const localRepo = this.state.repositories.find(
@@ -3047,13 +3106,20 @@ export class App extends React.Component<IAppProps, IAppState> {
     const account = this.state.accounts.find(a => a.endpoint === getDotComAPIEndpoint())
     if (account && (selectedOwner || ownerRepositories.length > 0 || loadingOwnerRepos)) {
       const localRepos = this.getLocalRepositoryInfos()
-      const localOnlyRepos = this.getLocalOnlyRepositories()
+      // Only show local-only repos in "All Owners" mode (when no specific owner selected)
+      const localOnlyRepos = selectedOwner ? undefined : this.getLocalOnlyRepositories()
+      // Get recent repos filtered by the selected owner
+      const recentRepos = this.getRecentAPIRepositories(selectedOwner)
+      // Only show recent local-only repos in "All Owners" mode
+      const recentLocalOnlyRepos = selectedOwner ? undefined : this.getRecentLocalOnlyRepositories()
       return (
         <CloneableRepositoryFilterList
           account={account}
           selectedItem={this.state.selectedAPIRepository}
           onSelectionChanged={this.onAPIRepositorySelectionChanged}
           repositories={ownerRepositories.length > 0 ? ownerRepositories : null}
+          recentRepositories={recentRepos}
+          recentLocalOnlyRepositories={recentLocalOnlyRepos}
           loading={loadingOwnerRepos}
           filterText={filterText}
           onFilterTextChanged={this.onRepositoryFilterTextChanged}

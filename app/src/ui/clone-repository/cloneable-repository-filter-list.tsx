@@ -7,6 +7,7 @@ import {
   groupRepositories,
   YourRepositoriesIdentifier,
   LocalRepositoriesIdentifier,
+  RecentRepositoriesIdentifier,
 } from './group-repositories'
 import type { ILocalRepoInfo, ILocalOnlyRepoInfo } from './group-repositories'
 import memoizeOne from 'memoize-one'
@@ -39,6 +40,11 @@ interface ICloneableRepositoryFilterListProps {
    * to access, or null if no repositories has been loaded yet.
    */
   readonly repositories: ReadonlyArray<IAPIRepository> | null
+
+  /**
+   * Recently accessed repositories to show at the top.
+   */
+  readonly recentRepositories?: ReadonlyArray<IAPIRepository>
 
   /**
    * Whether or not the list of repositories is currently being loaded
@@ -91,6 +97,11 @@ interface ICloneableRepositoryFilterListProps {
    * Local-only repositories (not associated with GitHub).
    */
   readonly localOnlyRepositories?: ReadonlyArray<ILocalOnlyRepoInfo>
+
+  /**
+   * Recent local-only repositories to show in the Recent section.
+   */
+  readonly recentLocalOnlyRepositories?: ReadonlyArray<ILocalOnlyRepoInfo>
 
   /**
    * Called when a local-only repository is clicked.
@@ -161,11 +172,13 @@ export class CloneableRepositoryFilterList extends React.PureComponent<ICloneabl
       repositories: ReadonlyArray<IAPIRepository> | null,
       login: string,
       localRepos?: ReadonlyArray<ILocalRepoInfo>,
-      localOnlyRepos?: ReadonlyArray<ILocalOnlyRepoInfo>
+      localOnlyRepos?: ReadonlyArray<ILocalOnlyRepoInfo>,
+      recentRepos?: ReadonlyArray<IAPIRepository>,
+      recentLocalOnlyRepos?: ReadonlyArray<ILocalOnlyRepoInfo>
     ) =>
       repositories === null
-        ? groupRepositories([], login, localRepos, localOnlyRepos)
-        : groupRepositories(repositories, login, localRepos, localOnlyRepos)
+        ? groupRepositories([], login, localRepos, localOnlyRepos, recentRepos, recentLocalOnlyRepos)
+        : groupRepositories(repositories, login, localRepos, localOnlyRepos, recentRepos, recentLocalOnlyRepos)
   )
 
   /**
@@ -202,19 +215,26 @@ export class CloneableRepositoryFilterList extends React.PureComponent<ICloneabl
     (groups: ReadonlyArray<IFilterListGroup<ICloneableRepositoryListItem>>) =>
     (group: number) => {
       const groupIdentifier = groups[group].identifier
-      return groupIdentifier === YourRepositoriesIdentifier
-        ? this.getYourRepositoriesLabel()
-        : groupIdentifier
+      if (groupIdentifier === YourRepositoriesIdentifier) {
+        return this.getYourRepositoriesLabel()
+      } else if (groupIdentifier === LocalRepositoriesIdentifier) {
+        return this.getLocalRepositoriesLabel()
+      } else if (groupIdentifier === RecentRepositoriesIdentifier) {
+        return this.getRecentRepositoriesLabel()
+      }
+      return groupIdentifier
     }
 
   public render() {
-    const { repositories, account, selectedItem, localRepositories, localOnlyRepositories } = this.props
+    const { repositories, account, selectedItem, localRepositories, localOnlyRepositories, recentRepositories, recentLocalOnlyRepositories } = this.props
 
     const groups = this.getRepositoryGroups(
       repositories,
       account.login,
       localRepositories,
-      localOnlyRepositories
+      localOnlyRepositories,
+      recentRepositories,
+      recentLocalOnlyRepositories
     )
     const selectedListItem = this.getSelectedListItem(groups, selectedItem)
 
@@ -284,12 +304,18 @@ export class CloneableRepositoryFilterList extends React.PureComponent<ICloneabl
     return __DARWIN__ ? 'Local Repositories' : 'Local repositories'
   }
 
+  private getRecentRepositoriesLabel = () => {
+    return 'Recent'
+  }
+
   private renderGroupHeader = (identifier: string) => {
     let header = identifier
     if (identifier === YourRepositoriesIdentifier) {
       header = this.getYourRepositoriesLabel()
     } else if (identifier === LocalRepositoriesIdentifier) {
       header = this.getLocalRepositoriesLabel()
+    } else if (identifier === RecentRepositoriesIdentifier) {
+      header = this.getRecentRepositoriesLabel()
     }
     return (
       <div className="clone-repository-list-content clone-repository-list-group-header">
