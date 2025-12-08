@@ -1994,7 +1994,8 @@
   color: var(--text-color);
 }
 
-.issue-refresh-button {
+.issue-refresh-button,
+.add-issue-button {
   display: flex;
   align-items: center;
   justify-content: center;

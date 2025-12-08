@@ -461,17 +461,20 @@ export class RepositoryView extends React.Component<
   }
 
   private renderIssuesSidebar(): JSX.Element {
-    const { tasksState } = this.props
+    const { tasksState, repository } = this.props
+    const canCreateIssues = isRepositoryWithGitHubRepository(repository)
 
     return (
       <IssueListPanel
         issues={tasksState.issues}
         isLoading={tasksState.isLoadingIssues}
         stateFilter={tasksState.issueStateFilter}
+        canCreateIssues={canCreateIssues}
         onRefresh={this.onIssuesRefresh}
         onIssueClick={this.onIssueClick}
         onOpenInBrowser={this.onIssueOpenInBrowser}
         onStateFilterChange={this.onIssueStateFilterChange}
+        onAddIssue={this.onAddTask}
       />
     )
   }

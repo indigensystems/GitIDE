@@ -14,6 +14,9 @@ interface IIssueListPanelProps {
   /** Current state filter */
   readonly stateFilter: 'open' | 'closed' | 'all'
 
+  /** Whether the add issue button should be enabled */
+  readonly canCreateIssues: boolean
+
   /** Called when the refresh button is clicked */
   readonly onRefresh: () => void
 
@@ -25,6 +28,9 @@ interface IIssueListPanelProps {
 
   /** Called when state filter changes */
   readonly onStateFilterChange: (state: 'open' | 'closed' | 'all') => void
+
+  /** Called when the add issue button is clicked */
+  readonly onAddIssue: () => void
 }
 
 /** Panel displaying repository issues */
@@ -57,6 +63,14 @@ export class IssueListPanel extends React.Component<IIssueListPanelProps> {
                 symbol={octicons.sync}
                 className={classNames({ spinning: isLoading })}
               />
+            </button>
+            <button
+              className="add-issue-button"
+              onClick={this.props.onAddIssue}
+              disabled={!this.props.canCreateIssues}
+              title="Create new issue"
+            >
+              <Octicon symbol={octicons.plus} />
             </button>
           </div>
         </header>
