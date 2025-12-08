@@ -708,3 +708,278 @@
     background: var(--md-canvas-subtle-color, rgba(88, 166, 255, 0.2));
   }
 }
+
+// CodeMirror editor wrapper
+.codemirror-wrapper {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+
+  .codemirror-editor-container {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+
+    .cm-editor {
+      width: 100%;
+      height: 100%;
+      outline: none;
+
+      &.cm-focused {
+        outline: none;
+      }
+    }
+
+    .cm-scroller {
+      overflow: auto;
+    }
+  }
+}
+
+// Milkdown WYSIWYG editor styles
+.milkdown-editor-container {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--box-background-color);
+
+  .milkdown {
+    width: 100%;
+    height: 100%;
+  }
+
+  .editor {
+    padding: var(--spacing);
+    outline: none;
+    min-height: 100%;
+    color: var(--text-color);
+    font-family: var(--font-family-sans-serif);
+    font-size: var(--font-size);
+    line-height: 1.6;
+
+    &:focus {
+      outline: none;
+    }
+  }
+
+  // Headings
+  h1, h2, h3, h4, h5, h6 {
+    color: var(--text-color);
+    font-weight: 600;
+    margin: 1em 0 0.5em 0;
+    line-height: 1.3;
+  }
+
+  h1 { font-size: 2em; border-bottom: 1px solid var(--box-border-color); padding-bottom: 0.3em; }
+  h2 { font-size: 1.5em; border-bottom: 1px solid var(--box-border-color); padding-bottom: 0.3em; }
+  h3 { font-size: 1.25em; }
+  h4 { font-size: 1em; }
+  h5 { font-size: 0.875em; }
+  h6 { font-size: 0.85em; color: var(--text-secondary-color); }
+
+  // Paragraphs
+  p {
+    margin: 0 0 1em 0;
+  }
+
+  // Links
+  a {
+    color: #58a6ff;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  // Bold, italic
+  strong { font-weight: 600; }
+  em { font-style: italic; }
+
+  // Code
+  code {
+    font-family: var(--font-family-monospace);
+    font-size: 0.9em;
+    background: rgba(110, 118, 129, 0.4);
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+  }
+
+  pre {
+    background: var(--box-alt-background-color);
+    border-radius: var(--border-radius);
+    padding: var(--spacing);
+    overflow-x: auto;
+    margin: 1em 0;
+
+    code {
+      background: none;
+      padding: 0;
+    }
+  }
+
+  // Lists
+  ul, ol {
+    margin: 0 0 1em 0;
+    padding-left: 2em;
+  }
+
+  li {
+    margin: 0.25em 0;
+  }
+
+  // Milkdown list-item-block component styling
+  li.list-item {
+    display: flex;
+    align-items: flex-start;
+    list-style: none;
+    margin: 0.25em 0;
+
+    .label-wrapper {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      margin-right: 8px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .children {
+      flex: 1;
+      min-width: 0;
+
+      > p {
+        margin: 0;
+      }
+    }
+  }
+
+  // Milkdown icon styling for list labels
+  .milkdown-icon.label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    line-height: 1;
+
+    // Bullet list style
+    &.bullet {
+      color: var(--text-secondary-color);
+      font-size: 8px;
+    }
+
+    // Ordered list style
+    &.ordered {
+      color: var(--text-secondary-color);
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    // Task list unchecked checkbox
+    &.unchecked {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--text-secondary-color);
+      border-radius: 4px;
+      background: transparent;
+      font-size: 0; // Hide the □ character
+      transition: all 0.15s ease;
+
+      &:hover {
+        border-color: #58a6ff;
+      }
+    }
+
+    // Task list checked checkbox
+    &.checked {
+      width: 18px;
+      height: 18px;
+      border: 2px solid #238636;
+      border-radius: 4px;
+      background: #238636;
+      font-size: 0; // Hide the ☑ character
+      position: relative;
+      transition: all 0.15s ease;
+
+      // Custom checkmark
+      &::after {
+        content: '';
+        position: absolute;
+        left: 5px;
+        top: 1px;
+        width: 5px;
+        height: 10px;
+        border: solid white;
+        border-width: 0 2px 2px 0;
+        transform: rotate(45deg);
+      }
+
+      &:hover {
+        background: #2ea043;
+        border-color: #2ea043;
+      }
+    }
+  }
+
+  // Nested lists
+  ul ul, ol ol, ul ol, ol ul {
+    margin: 0.25em 0;
+  }
+
+  // Blockquotes
+  blockquote {
+    margin: 1em 0;
+    padding: 0 1em;
+    border-left: 4px solid var(--box-border-color);
+    color: var(--text-secondary-color);
+  }
+
+  // Horizontal rule
+  hr {
+    border: none;
+    border-top: 1px solid var(--box-border-color);
+    margin: 2em 0;
+  }
+
+  // Tables
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1em 0;
+  }
+
+  th, td {
+    border: 1px solid var(--box-border-color);
+    padding: 0.5em 1em;
+    text-align: left;
+  }
+
+  th {
+    background: var(--box-alt-background-color);
+    font-weight: 600;
+  }
+
+  // Images
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  // Selection
+  ::selection {
+    background: var(--box-selected-active-background-color);
+  }
+
+  // Placeholder
+  .ProseMirror-placeholder {
+    color: var(--text-secondary-color);
+    pointer-events: none;
+    position: absolute;
+  }
+}

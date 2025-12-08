@@ -7,6 +7,8 @@ import { SandboxedMarkdown } from '../lib/sandboxed-markdown'
 import { Emoji } from '../../lib/emoji'
 import { shell } from 'electron'
 import { Terminal } from './terminal'
+import { CodeMirrorEditor } from './codemirror-editor'
+import { MilkdownEditor } from './milkdown-editor'
 
 // Prefix for terminal tab identifiers
 const TERMINAL_TAB_PREFIX = 'terminal://'
@@ -54,13 +56,13 @@ export class CodeViewContent extends React.Component<
   ICodeViewContentProps,
   ICodeViewContentState
 > {
-  private textareaRef = React.createRef<HTMLTextAreaElement>()
-  private lineNumbersRef = React.createRef<HTMLDivElement>()
   private viewLineNumbersRef = React.createRef<HTMLDivElement>()
   private codeContentRef = React.createRef<HTMLPreElement>()
   private contentCache = new Map<string, { content: string | null; isBinary: boolean; error: string | null }>()
   private _isMounted = false
   private _currentLoadingPath: string | null = null
+  private autoSaveTimeout: ReturnType<typeof setTimeout> | null = null
+  private readonly AUTO_SAVE_DELAY = 1500 // Auto-save after 1.5 seconds of no typing
 
   public constructor(props: ICodeViewContentProps) {
     super(props)
@@ -85,10 +87,29 @@ export class CodeViewContent extends React.Component<
   public componentWillUnmount() {
     this._isMounted = false
     this._currentLoadingPath = null
+    // Clear any pending auto-save
+    if (this.autoSaveTimeout) {
+      clearTimeout(this.autoSaveTimeout)
+      this.autoSaveTimeout = null
+    }
   }
 
   public componentDidUpdate(prevProps: ICodeViewContentProps) {
     if (prevProps.activeTab !== this.props.activeTab) {
+      // Cancel any pending auto-save for the old tab
+      if (this.autoSaveTimeout) {
+        clearTimeout(this.autoSaveTimeout)
+        this.autoSaveTimeout = null
+      }
+
+      // Auto-save if we were editing and have unsaved changes
+      if (this.state.isEditing && prevProps.activeTab) {
+        const prevTab = prevProps.openTabs.find(t => t.filePath === prevProps.activeTab)
+        if (prevTab?.hasUnsavedChanges) {
+          this.saveFileSync(prevProps.activeTab)
+        }
+      }
+
       // Cancel any pending load for the old tab
       this._currentLoadingPath = null
 
@@ -217,14 +238,17 @@ export class CodeViewContent extends React.Component<
     this.setState({
       isEditing: true,
       editedContent: this.state.content || ''
-    }, () => {
-      // Focus the textarea after entering edit mode
-      this.textareaRef.current?.focus()
     })
+    // CodeMirror editor auto-focuses when mounted
   }
 
   private onCancelEdit = () => {
     const { activeTab } = this.props
+    // Clear any pending auto-save
+    if (this.autoSaveTimeout) {
+      clearTimeout(this.autoSaveTimeout)
+      this.autoSaveTimeout = null
+    }
     this.setState({
       isEditing: false,
       editedContent: this.state.content || '',
@@ -239,6 +263,12 @@ export class CodeViewContent extends React.Component<
     const { editedContent } = this.state
 
     if (!activeTab) return
+
+    // Clear any pending auto-save since we're saving now
+    if (this.autoSaveTimeout) {
+      clearTimeout(this.autoSaveTimeout)
+      this.autoSaveTimeout = null
+    }
 
     this.setState({ isSaving: true })
 
@@ -260,72 +290,65 @@ export class CodeViewContent extends React.Component<
     }
   }
 
-  private onContentChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const editedContent = event.target.value
-    const hasUnsavedChanges = editedContent !== this.state.content
-    this.setState({ editedContent })
+  /** Save the file synchronously (used when switching tabs) */
+  private saveFileSync = (filePath: string) => {
+    const { editedContent } = this.state
+    try {
+      FSE.writeFileSync(filePath, editedContent, 'utf8')
+      // Update cache
+      this.contentCache.set(filePath, { content: editedContent, isBinary: false, error: null })
+      this.props.onTabUnsavedChange(filePath, false)
+    } catch (error) {
+      console.error('Failed to auto-save file:', error)
+    }
+  }
+
+  /** Schedule an auto-save after a delay (debounced) */
+  private scheduleAutoSave = () => {
+    // Clear any existing timeout
+    if (this.autoSaveTimeout) {
+      clearTimeout(this.autoSaveTimeout)
+    }
+
+    // Schedule a new auto-save
+    this.autoSaveTimeout = setTimeout(() => {
+      this.performAutoSave()
+    }, this.AUTO_SAVE_DELAY)
+  }
+
+  /** Perform the auto-save */
+  private performAutoSave = async () => {
+    const { activeTab } = this.props
+    const { editedContent, content, isEditing } = this.state
+
+    // Only auto-save if we're editing and have changes
+    if (!activeTab || !isEditing || editedContent === content) {
+      return
+    }
+
+    try {
+      await FSE.writeFile(activeTab, editedContent, 'utf8')
+      // Update cache and content state (but stay in edit mode)
+      this.contentCache.set(activeTab, { content: editedContent, isBinary: false, error: null })
+      if (this._isMounted) {
+        this.setState({ content: editedContent })
+        this.props.onTabUnsavedChange(activeTab, false)
+      }
+    } catch (error) {
+      console.error('Auto-save failed:', error)
+    }
+  }
+
+  /** Handler for CodeMirror content changes */
+  private onCodeMirrorChange = (content: string) => {
+    const hasUnsavedChanges = content !== this.state.content
+    this.setState({ editedContent: content })
     if (this.props.activeTab) {
       this.props.onTabUnsavedChange(this.props.activeTab, hasUnsavedChanges)
-    }
-  }
-
-  private onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
-    const modKey = isMac ? event.metaKey : event.ctrlKey
-
-    // Save with Cmd/Ctrl + S
-    if (modKey && event.key === 's') {
-      event.preventDefault()
-      this.onSaveClick()
-      return
-    }
-    // Cancel with Escape
-    if (event.key === 'Escape') {
-      this.onCancelEdit()
-      return
-    }
-
-    // Markdown formatting shortcuts (only for markdown files)
-    if (modKey && this.props.activeTab && this.isMarkdownFile(this.props.activeTab)) {
-      switch (event.key.toLowerCase()) {
-        case 'b':
-          event.preventDefault()
-          this.applyFormatting('bold')
-          return
-        case 'i':
-          event.preventDefault()
-          this.applyFormatting('italic')
-          return
-        case 'k':
-          event.preventDefault()
-          this.applyFormatting('link')
-          return
+      // Schedule auto-save when content changes
+      if (hasUnsavedChanges) {
+        this.scheduleAutoSave()
       }
-    }
-
-    // Handle Tab key for indentation
-    if (event.key === 'Tab') {
-      event.preventDefault()
-      const textarea = event.currentTarget
-      const start = textarea.selectionStart
-      const end = textarea.selectionEnd
-      const value = textarea.value
-
-      // Insert tab at cursor position
-      const newValue = value.substring(0, start) + '  ' + value.substring(end)
-      this.setState({ editedContent: newValue }, () => {
-        textarea.selectionStart = textarea.selectionEnd = start + 2
-      })
-      if (this.props.activeTab) {
-        this.props.onTabUnsavedChange(this.props.activeTab, true)
-      }
-    }
-  }
-
-  private onEditorScroll = (event: React.UIEvent<HTMLTextAreaElement>) => {
-    // Sync line numbers scroll with editor scroll
-    if (this.lineNumbersRef.current) {
-      this.lineNumbersRef.current.scrollTop = event.currentTarget.scrollTop
     }
   }
 
@@ -334,131 +357,6 @@ export class CodeViewContent extends React.Component<
     if (this.viewLineNumbersRef.current) {
       this.viewLineNumbersRef.current.scrollTop = event.currentTarget.scrollTop
     }
-  }
-
-  private applyFormatting = (format: string) => {
-    const textarea = this.textareaRef.current
-    if (!textarea) return
-
-    const start = textarea.selectionStart
-    const end = textarea.selectionEnd
-    const value = textarea.value
-    const selectedText = value.substring(start, end)
-
-    let newText = ''
-    let cursorOffset = 0
-    let selectAfter = false
-
-    switch (format) {
-      case 'bold':
-        newText = `**${selectedText || 'bold text'}**`
-        cursorOffset = selectedText ? newText.length : 2
-        selectAfter = !selectedText
-        break
-      case 'italic':
-        newText = `*${selectedText || 'italic text'}*`
-        cursorOffset = selectedText ? newText.length : 1
-        selectAfter = !selectedText
-        break
-      case 'strikethrough':
-        newText = `~~${selectedText || 'strikethrough text'}~~`
-        cursorOffset = selectedText ? newText.length : 2
-        selectAfter = !selectedText
-        break
-      case 'code':
-        newText = `\`${selectedText || 'code'}\``
-        cursorOffset = selectedText ? newText.length : 1
-        selectAfter = !selectedText
-        break
-      case 'codeblock':
-        newText = `\`\`\`\n${selectedText || 'code'}\n\`\`\``
-        cursorOffset = selectedText ? newText.length : 4
-        selectAfter = !selectedText
-        break
-      case 'link':
-        if (selectedText) {
-          newText = `[${selectedText}](url)`
-          cursorOffset = newText.length - 4 // Position cursor at 'url'
-        } else {
-          newText = `[link text](url)`
-          cursorOffset = 1 // Position cursor after [
-          selectAfter = true
-        }
-        break
-      case 'h1':
-        newText = this.applyLinePrefix('# ', selectedText)
-        cursorOffset = newText.length
-        break
-      case 'h2':
-        newText = this.applyLinePrefix('## ', selectedText)
-        cursorOffset = newText.length
-        break
-      case 'h3':
-        newText = this.applyLinePrefix('### ', selectedText)
-        cursorOffset = newText.length
-        break
-      case 'ul':
-        newText = this.applyLinePrefix('- ', selectedText)
-        cursorOffset = newText.length
-        break
-      case 'ol':
-        newText = this.applyLinePrefix('1. ', selectedText)
-        cursorOffset = newText.length
-        break
-      case 'task':
-        newText = this.applyLinePrefix('- [ ] ', selectedText)
-        cursorOffset = newText.length
-        break
-      case 'quote':
-        newText = this.applyLinePrefix('> ', selectedText)
-        cursorOffset = newText.length
-        break
-      case 'wikilink':
-        if (selectedText) {
-          // If text is selected, use it as the link path
-          newText = `[[${selectedText}]]`
-          cursorOffset = newText.length
-        } else {
-          newText = `[[note.md]]`
-          cursorOffset = 2 // Position cursor after [[
-          selectAfter = true
-        }
-        break
-      default:
-        return
-    }
-
-    const newValue = value.substring(0, start) + newText + value.substring(end)
-    // Save scroll position before state update
-    const scrollTop = textarea.scrollTop
-    this.setState({ editedContent: newValue }, () => {
-      textarea.focus()
-      // Restore scroll position after focus
-      textarea.scrollTop = scrollTop
-      if (selectAfter && !selectedText) {
-        // Select the placeholder text
-        textarea.selectionStart = start + cursorOffset
-        textarea.selectionEnd = start + newText.length - cursorOffset
-      } else {
-        textarea.selectionStart = textarea.selectionEnd = start + cursorOffset
-      }
-      // Sync line numbers
-      if (this.lineNumbersRef.current) {
-        this.lineNumbersRef.current.scrollTop = scrollTop
-      }
-    })
-
-    if (this.props.activeTab) {
-      this.props.onTabUnsavedChange(this.props.activeTab, true)
-    }
-  }
-
-  private applyLinePrefix(prefix: string, text: string): string {
-    if (!text) {
-      return prefix + 'text'
-    }
-    // Apply prefix to each line
-    return text.split('\n').map(line => prefix + line).join('\n')
   }
 
   private onTabClick = (filePath: string) => {
@@ -734,132 +632,9 @@ export class CodeViewContent extends React.Component<
     )
   }
 
-  private renderMarkdownToolbar() {
-    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
-    const modKey = isMac ? '⌘' : 'Ctrl+'
-
-    return (
-      <div className="markdown-toolbar">
-        <div className="toolbar-group">
-          <button
-            className="toolbar-button"
-            onClick={() => this.applyFormatting('bold')}
-            title={`Bold (${modKey}B)`}
-          >
-            <strong>B</strong>
-          </button>
-          <button
-            className="toolbar-button"
-            onClick={() => this.applyFormatting('italic')}
-            title={`Italic (${modKey}I)`}
-          >
-            <em>I</em>
-          </button>
-          <button
-            className="toolbar-button"
-            onClick={() => this.applyFormatting('strikethrough')}
-            title="Strikethrough"
-          >
-            <s>S</s>
-          </button>
-        </div>
-        <div className="toolbar-separator" />
-        <div className="toolbar-group">
-          <button
-            className="toolbar-button"
-            onClick={() => this.applyFormatting('h1')}
-            title="Heading 1"
-          >
-            H1
-          </button>
-          <button
-            className="toolbar-button"
-            onClick={() => this.applyFormatting('h2')}
-            title="Heading 2"
-          >
-            H2
-          </button>
-          <button
-            className="toolbar-button"
-            onClick={() => this.applyFormatting('h3')}
-            title="Heading 3"
-          >
-            H3
-          </button>
-        </div>
-        <div className="toolbar-separator" />
-        <div className="toolbar-group">
-          <button
-            className="toolbar-button"
-            onClick={() => this.applyFormatting('ul')}
-            title="Bullet List"
-          >
-            <Octicon symbol={octicons.listUnordered} />
-          </button>
-          <button
-            className="toolbar-button"
-            onClick={() => this.applyFormatting('ol')}
-            title="Numbered List"
-          >
-            <Octicon symbol={octicons.listOrdered} />
-          </button>
-          <button
-            className="toolbar-button"
-            onClick={() => this.applyFormatting('task')}
-            title="Task List"
-          >
-            <Octicon symbol={octicons.tasklist} />
-          </button>
-        </div>
-        <div className="toolbar-separator" />
-        <div className="toolbar-group">
-          <button
-            className="toolbar-button"
-            onClick={() => this.applyFormatting('code')}
-            title="Inline Code"
-          >
-            <Octicon symbol={octicons.code} />
-          </button>
-          <button
-            className="toolbar-button"
-            onClick={() => this.applyFormatting('codeblock')}
-            title="Code Block"
-          >
-            <Octicon symbol={octicons.fileCode} />
-          </button>
-          <button
-            className="toolbar-button"
-            onClick={() => this.applyFormatting('quote')}
-            title="Quote"
-          >
-            <Octicon symbol={octicons.quote} />
-          </button>
-        </div>
-        <div className="toolbar-separator" />
-        <div className="toolbar-group">
-          <button
-            className="toolbar-button"
-            onClick={() => this.applyFormatting('link')}
-            title={`Link (${modKey}K)`}
-          >
-            <Octicon symbol={octicons.link} />
-          </button>
-          <button
-            className="toolbar-button wiki-link-button"
-            onClick={() => this.applyFormatting('wikilink')}
-            title={`Wiki Link\n\n[[file.md]] - link in this repo\n[[repo:path/file.md]] - link in another repo`}
-          >
-            <span className="wiki-link-icon">[[</span>
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   private renderEditor(relativePath: string, icon: typeof octicons.file) {
     const { activeTab, openTabs } = this.props
     const { editedContent, isSaving } = this.state
-    const lines = editedContent.split('\n')
     const currentTab = openTabs.find(t => t.filePath === activeTab)
     const hasUnsavedChanges = currentTab?.hasUnsavedChanges ?? false
     const isMarkdown = activeTab ? this.isMarkdownFile(activeTab) : false
@@ -891,28 +666,24 @@ export class CodeViewContent extends React.Component<
             </button>
           </div>
         </div>
-        {isMarkdown && this.renderMarkdownToolbar()}
-        <div className="editor-container">
-          <div className="line-numbers" ref={this.lineNumbersRef}>
-            {lines.map((_, i) => (
-              <div key={i} className="line-number">
-                {i + 1}
-              </div>
-            ))}
-          </div>
-          <textarea
-            ref={this.textareaRef}
-            className="code-editor"
-            value={editedContent}
-            onChange={this.onContentChange}
-            onKeyDown={this.onKeyDown}
-            onScroll={this.onEditorScroll}
-            spellCheck={false}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
+        {isMarkdown ? (
+          <MilkdownEditor
+            content={editedContent}
+            onChange={this.onCodeMirrorChange}
+            onSave={this.onSaveClick}
+            onCancel={this.onCancelEdit}
           />
-        </div>
+        ) : (
+          <div className="editor-container codemirror-wrapper">
+            <CodeMirrorEditor
+              content={editedContent}
+              filePath={activeTab || ''}
+              onChange={this.onCodeMirrorChange}
+              onSave={this.onSaveClick}
+              onCancel={this.onCancelEdit}
+            />
+          </div>
+        )}
       </div>
     )
   }
