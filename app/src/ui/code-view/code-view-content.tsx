@@ -3,12 +3,11 @@ import * as Path from 'path'
 import * as FSE from 'fs-extra'
 import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
-import { SandboxedMarkdown } from '../lib/sandboxed-markdown'
 import { Emoji } from '../../lib/emoji'
-import { shell } from 'electron'
 import { Terminal } from './terminal'
 import { CodeMirrorEditor } from './codemirror-editor'
 import { MilkdownEditor } from './milkdown-editor'
+import { IEditorSettings, EditorModeLock } from '../../models/preferences'
 
 // Prefix for terminal tab identifiers
 const TERMINAL_TAB_PREFIX = 'terminal://'
@@ -40,6 +39,8 @@ interface ICodeViewContentProps {
   readonly onTerminalExit?: (terminalTabPath: string) => void
   /** Callback when a wiki link is clicked. Returns true if navigation was handled. */
   readonly onWikiLinkClick?: (repoName: string | null, filePath: string) => void
+  /** Editor settings for code editor appearance and behavior */
+  readonly editorSettings?: IEditorSettings
 }
 
 interface ICodeViewContentState {
@@ -56,8 +57,6 @@ export class CodeViewContent extends React.Component<
   ICodeViewContentProps,
   ICodeViewContentState
 > {
-  private viewLineNumbersRef = React.createRef<HTMLDivElement>()
-  private codeContentRef = React.createRef<HTMLPreElement>()
   private contentCache = new Map<string, { content: string | null; isBinary: boolean; error: string | null }>()
   private _isMounted = false
   private _currentLoadingPath: string | null = null
@@ -234,14 +233,6 @@ export class CodeViewContent extends React.Component<
     }
   }
 
-  private onEditClick = () => {
-    this.setState({
-      isEditing: true,
-      editedContent: this.state.content || ''
-    })
-    // CodeMirror editor auto-focuses when mounted
-  }
-
   private onCancelEdit = () => {
     const { activeTab } = this.props
     // Clear any pending auto-save
@@ -349,13 +340,6 @@ export class CodeViewContent extends React.Component<
       if (hasUnsavedChanges) {
         this.scheduleAutoSave()
       }
-    }
-  }
-
-  private onCodeContentScroll = (event: React.UIEvent<HTMLPreElement>) => {
-    // Sync line numbers scroll with code content scroll (view mode)
-    if (this.viewLineNumbersRef.current) {
-      this.viewLineNumbersRef.current.scrollTop = event.currentTarget.scrollTop
     }
   }
 
@@ -507,190 +491,76 @@ export class CodeViewContent extends React.Component<
     )
   }
 
-  private onMarkdownLinkClicked = (url: string) => {
-    // Check if it's a wiki link (internal navigation)
-    if (url.startsWith('wikilink://')) {
-      const linkPath = decodeURIComponent(url.replace('wikilink://', ''))
-      this.handleWikiLinkClick(linkPath)
-      return
-    }
-    shell.openExternal(url)
-  }
-
-  private handleWikiLinkClick = (linkPath: string) => {
-    const { repositoryPath, repositoryName, onWikiLinkClick } = this.props
-
-    // Parse the link: could be "repo:path/to/file.md" or just "path/to/file.md"
-    let targetRepo: string | null = null
-    let targetPath: string = linkPath
-
-    if (linkPath.includes(':')) {
-      const colonIndex = linkPath.indexOf(':')
-      targetRepo = linkPath.substring(0, colonIndex)
-      targetPath = linkPath.substring(colonIndex + 1)
-    }
-
-    // If no repo specified or same repo, open in current repo
-    if (!targetRepo || targetRepo === repositoryName) {
-      // Resolve relative to repository root
-      const fullPath = Path.join(repositoryPath, targetPath)
-      // Open the file in a new tab
-      this.props.onTabSelect(fullPath)
-    } else if (onWikiLinkClick) {
-      // Cross-repo link - let parent handle it
-      onWikiLinkClick(targetRepo, targetPath)
-    }
-  }
-
-  private onCheckboxToggle = async (index: number, checked: boolean) => {
-    const { activeTab } = this.props
-    const { content } = this.state
-
-    if (!activeTab || content === null) {
-      return
-    }
-
-    // Find all checkbox patterns in the markdown: - [ ] or - [x] or * [ ] or * [x]
-    // Also handles numbered lists: 1. [ ] or 1. [x]
-    const checkboxPattern = /^(\s*(?:[-*]|\d+\.)\s*)\[([ xX])\]/gm
-    let match: RegExpExecArray | null
-    let currentIndex = 0
-    let newContent = content
-
-    while ((match = checkboxPattern.exec(content)) !== null) {
-      if (currentIndex === index) {
-        const prefix = match[1]
-        const currentState = match[2]
-        const newState = checked ? 'x' : ' '
-
-        // Only update if state actually changed
-        if ((currentState === ' ' && checked) || (currentState !== ' ' && !checked)) {
-          const before = content.slice(0, match.index)
-          const after = content.slice(match.index + match[0].length)
-          newContent = `${before}${prefix}[${newState}]${after}`
-
-          // Save the file
-          try {
-            await FSE.writeFile(activeTab, newContent, 'utf8')
-            // Update the state with new content
-            this.setState({ content: newContent })
-            // Update cache
-            this.contentCache.set(activeTab, { content: newContent, isBinary: false, error: null })
-          } catch (error) {
-            console.error('Failed to save checkbox state:', error)
-          }
-        }
-        break
-      }
-      currentIndex++
+  private onToggleEditMode = () => {
+    const { isEditing, content } = this.state
+    if (isEditing) {
+      // Switching to read-only mode - save first if there are changes
+      this.onSaveClick()
+    } else {
+      // Switching to edit mode
+      this.setState({
+        isEditing: true,
+        editedContent: content || ''
+      })
     }
   }
 
   private renderMarkdownContent() {
-    const { activeTab, emoji, repositoryPath } = this.props
-    const { content, isEditing } = this.state
+    const { activeTab, repositoryPath, openTabs } = this.props
+    const { content, isEditing, editedContent, isSaving } = this.state
 
     if (content === null || !activeTab) {
       return this.renderEmptyState()
     }
 
     const relativePath = Path.relative(repositoryPath, activeTab)
-    const baseHref = `file://${Path.dirname(activeTab)}/`
-
-    if (isEditing) {
-      return this.renderEditor(relativePath, octicons.markdown)
-    }
-
-    return (
-      <div className="code-view-content markdown-view">
-        <div className="file-header">
-          <Octicon symbol={octicons.markdown} />
-          <span className="file-path">{relativePath}</span>
-          <div className="file-actions">
-            <button
-              className="edit-button"
-              onClick={this.onEditClick}
-              title="Edit file"
-            >
-              <Octicon symbol={octicons.pencil} />
-              Edit
-            </button>
-          </div>
-        </div>
-        <div className="markdown-container">
-          <SandboxedMarkdown
-            markdown={content}
-            emoji={emoji}
-            baseHref={baseHref}
-            onMarkdownLinkClicked={this.onMarkdownLinkClicked}
-            onCheckboxToggle={this.onCheckboxToggle}
-            underlineLinks={true}
-            ariaLabel={`Markdown content of ${Path.basename(activeTab)}`}
-          />
-        </div>
-      </div>
-    )
-  }
-
-  private renderEditor(relativePath: string, icon: typeof octicons.file) {
-    const { activeTab, openTabs } = this.props
-    const { editedContent, isSaving } = this.state
     const currentTab = openTabs.find(t => t.filePath === activeTab)
     const hasUnsavedChanges = currentTab?.hasUnsavedChanges ?? false
-    const isMarkdown = activeTab ? this.isMarkdownFile(activeTab) : false
+
+    // Check if mode is locked
+    const modeLock = this.props.editorSettings?.modeLock
+    const isModeLocked = modeLock !== undefined && modeLock !== EditorModeLock.None
+
+    // Calculate effective editing state based on modeLock
+    const effectiveIsEditing = isModeLocked
+      ? modeLock === EditorModeLock.Edit
+      : isEditing
 
     return (
-      <div className="code-view-content editing">
+      <div className="code-view-content markdown-view milkdown-active">
         <div className="file-header">
-          <Octicon symbol={icon} />
+          <Octicon symbol={octicons.markdown} />
           <span className="file-path">
             {relativePath}
             {hasUnsavedChanges && <span className="unsaved-indicator">*</span>}
           </span>
           <div className="file-actions">
-            <button
-              className="cancel-button"
-              onClick={this.onCancelEdit}
-              disabled={isSaving}
-            >
-              Cancel
-            </button>
-            <button
-              className="save-button"
-              onClick={this.onSaveClick}
-              disabled={isSaving || !hasUnsavedChanges}
-              title="Save (Cmd+S)"
-            >
-              <Octicon symbol={octicons.check} />
-              {isSaving ? 'Saving...' : 'Save'}
-            </button>
+            {!isModeLocked && (
+              <button
+                className={`edit-toggle-button ${effectiveIsEditing ? 'editing' : 'readonly'}`}
+                onClick={this.onToggleEditMode}
+                disabled={isSaving}
+                title={effectiveIsEditing ? 'Switch to read-only mode' : 'Switch to edit mode'}
+              >
+                <Octicon symbol={effectiveIsEditing ? octicons.eye : octicons.pencil} />
+                {effectiveIsEditing ? 'Read' : 'Edit'}
+              </button>
+            )}
           </div>
         </div>
-        {isMarkdown ? (
-          <MilkdownEditor
-            content={editedContent}
-            onChange={this.onCodeMirrorChange}
-            onSave={this.onSaveClick}
-            onCancel={this.onCancelEdit}
-          />
-        ) : (
-          <div className="editor-container codemirror-wrapper">
-            <CodeMirrorEditor
-              content={editedContent}
-              filePath={activeTab || ''}
-              onChange={this.onCodeMirrorChange}
-              onSave={this.onSaveClick}
-              onCancel={this.onCancelEdit}
-            />
-          </div>
-        )}
+        <MilkdownEditor
+          content={effectiveIsEditing ? editedContent : content}
+          onChange={this.onCodeMirrorChange}
+          onSave={this.onSaveClick}
+          readOnly={!effectiveIsEditing}
+        />
       </div>
     )
   }
 
   private renderFileContent() {
-    const { activeTab, repositoryPath } = this.props
-    const { content, isEditing } = this.state
+    const { activeTab, repositoryPath, openTabs } = this.props
+    const { content, isEditing, editedContent, isSaving } = this.state
 
     if (content === null || !activeTab) {
       return this.renderEmptyState()
@@ -702,51 +572,52 @@ export class CodeViewContent extends React.Component<
     }
 
     const relativePath = Path.relative(repositoryPath, activeTab)
-
-    if (isEditing) {
-      return this.renderEditor(relativePath, octicons.file)
-    }
-
+    const currentTab = openTabs.find(t => t.filePath === activeTab)
+    const hasUnsavedChanges = currentTab?.hasUnsavedChanges ?? false
     const lines = content.split('\n')
 
+    // Check if mode is locked
+    const modeLock = this.props.editorSettings?.modeLock
+    const isModeLocked = modeLock !== undefined && modeLock !== EditorModeLock.None
+
+    // Calculate effective editing state based on modeLock
+    const effectiveIsEditing = isModeLocked
+      ? modeLock === EditorModeLock.Edit
+      : isEditing
+
     return (
-      <div className="code-view-content">
+      <div className="code-view-content codemirror-active">
         <div className="file-header">
-          <Octicon symbol={octicons.file} />
-          <span className="file-path">{relativePath}</span>
+          <Octicon symbol={this.getFileIcon(activeTab)} />
+          <span className="file-path">
+            {relativePath}
+            {hasUnsavedChanges && <span className="unsaved-indicator">*</span>}
+          </span>
           <span className="line-count">{lines.length} lines</span>
           <div className="file-actions">
-            <button
-              className="edit-button"
-              onClick={this.onEditClick}
-              title="Edit file"
-            >
-              <Octicon symbol={octicons.pencil} />
-              Edit
-            </button>
+            {!isModeLocked && (
+              <button
+                className={`edit-toggle-button ${effectiveIsEditing ? 'editing' : 'readonly'}`}
+                onClick={this.onToggleEditMode}
+                disabled={isSaving}
+                title={effectiveIsEditing ? 'Switch to read-only mode' : 'Switch to edit mode'}
+              >
+                <Octicon symbol={effectiveIsEditing ? octicons.eye : octicons.pencil} />
+                {effectiveIsEditing ? 'Read' : 'Edit'}
+              </button>
+            )}
           </div>
         </div>
-        <div className="code-container">
-          <div className="line-numbers" ref={this.viewLineNumbersRef}>
-            {lines.map((_, i) => (
-              <div key={i} className="line-number">
-                {i + 1}
-              </div>
-            ))}
-          </div>
-          <pre
-            className="code-content"
-            ref={this.codeContentRef}
-            onScroll={this.onCodeContentScroll}
-          >
-            <code>
-              {lines.map((line, i) => (
-                <div key={i} className="code-line">
-                  {line || ' '}
-                </div>
-              ))}
-            </code>
-          </pre>
+        <div className="editor-container codemirror-wrapper">
+          <CodeMirrorEditor
+            content={effectiveIsEditing ? editedContent : content}
+            filePath={activeTab}
+            onChange={this.onCodeMirrorChange}
+            onSave={this.onSaveClick}
+            onCancel={this.onCancelEdit}
+            readOnly={!effectiveIsEditing}
+            settings={this.props.editorSettings}
+          />
         </div>
       </div>
     )

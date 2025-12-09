@@ -1600,6 +1600,7 @@ export class App extends React.Component<IAppProps, IAppState> {
             selectedShell={this.state.selectedShell}
             selectedTheme={this.state.selectedTheme}
             selectedTabSize={this.state.selectedTabSize}
+            editorSettings={this.state.editorSettings}
             useCustomEditor={this.state.useCustomEditor}
             customEditor={this.state.customEditor}
             useCustomShell={this.state.useCustomShell}
@@ -3999,6 +4000,7 @@ export class App extends React.Component<IAppProps, IAppState> {
           }
           tasksState={state.tasksState}
           selectedProject={state.selectedProject}
+          editorSettings={state.editorSettings}
         />
       )
     } else if (selectedState.type === SelectionType.CloningRepository) {

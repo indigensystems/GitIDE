@@ -90,6 +90,7 @@ import {
 } from '../../models/status'
 import { TipState, IValidBranch } from '../../models/tip'
 import { Banner, BannerType } from '../../models/banner'
+import { IEditorSettings } from '../../models/preferences'
 
 import { ApplicationTheme } from '../lib/application-theme'
 import { installCLI } from '../lib/install-cli'
@@ -2504,6 +2505,13 @@ export class Dispatcher {
    */
   public setSelectedTabSize(tabSize: number) {
     return this.appStore._setSelectedTabSize(tabSize)
+  }
+
+  /**
+   * Set the code editor settings
+   */
+  public setEditorSettings(settings: IEditorSettings) {
+    return this.appStore._setEditorSettings(settings)
   }
 
   /**

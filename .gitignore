@@ -20,3 +20,4 @@ junit*.xml
 *.swp
 tslint-rules/
 buildplan.md
+CLAUDE.md

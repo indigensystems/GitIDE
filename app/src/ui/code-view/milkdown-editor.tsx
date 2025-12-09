@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { useCallback, useEffect, useRef } from 'react'
-import { Editor, rootCtx, defaultValueCtx } from '@milkdown/core'
+import { Editor, rootCtx, defaultValueCtx, editorViewOptionsCtx } from '@milkdown/core'
 import { commonmark } from '@milkdown/preset-commonmark'
 import { gfm } from '@milkdown/preset-gfm'
 import { listener, listenerCtx } from '@milkdown/plugin-listener'
@@ -18,8 +18,6 @@ interface IMilkdownEditorProps {
   readonly onChange: (content: string) => void
   /** Called when save is requested (Cmd/Ctrl+S) */
   readonly onSave: () => void
-  /** Called when cancel/escape is pressed */
-  readonly onCancel: () => void
   /** Whether the editor should be read-only */
   readonly readOnly?: boolean
 }
@@ -35,31 +33,32 @@ export class MilkdownEditor extends React.Component<IMilkdownEditorProps> {
 
 /** Inner functional component that uses hooks */
 function MilkdownEditorInner(props: IMilkdownEditorProps) {
-  const { content, onChange, onSave, onCancel, readOnly } = props
+  const { content, onChange, onSave, readOnly } = props
   const containerRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<Editor | null>(null)
   const contentRef = useRef(content)
+  const readOnlyRef = useRef(readOnly)
 
-  // Keep content ref updated
+  // Keep refs updated
   contentRef.current = content
+  readOnlyRef.current = readOnly
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    // Cmd/Ctrl+S to save
-    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+    // Cmd/Ctrl+S to save (only in edit mode)
+    if ((e.metaKey || e.ctrlKey) && e.key === 's' && !readOnlyRef.current) {
       e.preventDefault()
       onSave()
     }
-    // Escape to cancel
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      onCancel()
-    }
-  }, [onSave, onCancel])
+  }, [onSave])
 
+  // Recreate editor when readOnly changes
   useEffect(() => {
     if (!containerRef.current) return
 
     const container = containerRef.current
+
+    // Clear previous content
+    container.innerHTML = ''
 
     // Add keyboard listener
     container.addEventListener('keydown', handleKeyDown)
@@ -70,9 +69,16 @@ function MilkdownEditorInner(props: IMilkdownEditorProps) {
         ctx.set(rootCtx, container)
         ctx.set(defaultValueCtx, contentRef.current)
 
-        // Set up change listener
+        // Set editable based on readOnly prop
+        ctx.set(editorViewOptionsCtx, {
+          editable: () => !readOnly
+        })
+
+        // Set up change listener (only fires when editable)
         ctx.get(listenerCtx).markdownUpdated((_, markdown) => {
-          onChange(markdown)
+          if (!readOnlyRef.current) {
+            onChange(markdown)
+          }
         })
       })
       .use(commonmark)
@@ -93,7 +99,7 @@ function MilkdownEditorInner(props: IMilkdownEditorProps) {
       container.removeEventListener('keydown', handleKeyDown)
       editorRef.current?.destroy()
     }
-  }, [handleKeyDown, onChange])
+  }, [handleKeyDown, onChange, readOnly])
 
   return (
     <div

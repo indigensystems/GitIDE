@@ -83,6 +83,11 @@ import {
   getPersistedThemeName,
   setPersistedTheme,
 } from '../../ui/lib/application-theme'
+import {
+  getPersistedEditorSettings,
+  setPersistedEditorSettings,
+} from '../../ui/lib/editor-settings'
+import { IEditorSettings, defaultEditorSettings } from '../../models/preferences'
 import { findCurrentIterationTitle } from '../../ui/project-view/filter-utils'
 import {
   getAppMenu,
@@ -592,6 +597,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private selectedTheme = ApplicationTheme.System
   private currentTheme: ApplicableTheme = ApplicationTheme.Light
   private selectedTabSize = tabSizeDefault
+  private editorSettings: IEditorSettings = defaultEditorSettings
 
   private useWindowsOpenSSH: boolean = false
 
@@ -945,6 +951,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     this.cloningRepositoriesStore.onDidError(e => this.emitError(e))
 
+    this.tasksStore.onDidUpdate(() => {
+      this.emitUpdate()
+    })
+
     this.signInStore.onDidAuthenticate(account => this._addAccount(account))
     this.signInStore.onDidUpdate(() => this.emitUpdate())
     this.signInStore.onDidError(error => this.emitError(error))
@@ -1141,6 +1151,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       selectedTheme: this.selectedTheme,
       currentTheme: this.currentTheme,
       selectedTabSize: this.selectedTabSize,
+      editorSettings: this.editorSettings,
       apiRepositories: this.apiRepositoriesStore.getState(),
       useWindowsOpenSSH: this.useWindowsOpenSSH,
       showCommitLengthWarning: this.showCommitLengthWarning,
@@ -2390,6 +2401,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.currentTheme = await getCurrentlyAppliedTheme()
 
     this.selectedTabSize = getNumber(tabSizeKey, tabSizeDefault)
+    this.editorSettings = getPersistedEditorSettings()
 
     themeChangeMonitor.onThemeChanged(theme => {
       this.currentTheme = theme
@@ -7046,6 +7058,17 @@ export class AppStore extends TypedBaseStore<IAppState> {
       setNumber(tabSizeKey, tabSize)
       this.emitUpdate()
     }
+
+    return Promise.resolve()
+  }
+
+  /**
+   * Set the code editor settings
+   */
+  public _setEditorSettings(settings: IEditorSettings) {
+    this.editorSettings = settings
+    setPersistedEditorSettings(settings)
+    this.emitUpdate()
 
     return Promise.resolve()
   }

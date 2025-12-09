@@ -1,3 +1,3 @@
 # Project View Tasks
 
-- [ ] Add drag-and-drop to move issues between board columns (update Status field via API)
+- [ ] make a dag view, ie a visual tree of all changes so you can click through and read each commit

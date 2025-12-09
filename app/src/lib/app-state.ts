@@ -48,6 +48,7 @@ import {
 import { IChangesetData } from './git'
 import { Popup } from '../models/popup'
 import { RepoRulesInfo } from '../models/repo-rules'
+import { IEditorSettings } from '../models/preferences'
 import { IAPIRepoRuleset, IAPIOrganization, IAPIProjectV2, IAPIRepository } from './api'
 import { ICustomIntegration } from './custom-integration'
 import { Emoji } from './emoji'
@@ -299,6 +300,9 @@ export interface IAppState {
 
   /** The selected tab size preference */
   readonly selectedTabSize: number
+
+  /** Code editor settings */
+  readonly editorSettings: IEditorSettings
 
   /**
    * A map keyed on a user account (GitHub.com or GitHub Enterprise)

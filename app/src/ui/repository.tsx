@@ -45,6 +45,7 @@ import { ITask } from '../lib/databases/tasks-database'
 import { TaskViewMode, TaskSource } from '../lib/stores/tasks-store'
 import { IAPIProjectV2 } from '../lib/api'
 import { PopupType } from '../models/popup'
+import { IEditorSettings } from '../models/preferences'
 
 interface IRepositoryViewProps {
   readonly repository: Repository
@@ -128,6 +129,9 @@ interface IRepositoryViewProps {
 
   /** Whether or not to show the changes filter */
   readonly showChangesFilter: boolean
+
+  /** Editor settings for code editor appearance and behavior */
+  readonly editorSettings: IEditorSettings
 }
 
 interface IRepositoryViewState {
@@ -488,6 +492,7 @@ export class RepositoryView extends React.Component<
         onFileSelected={this.onCodeFileSelected}
         onFileCreated={this.onCodeFileSelected}
         onOpenTerminal={this.onOpenTerminal}
+        onOpenClaude={this.onOpenClaude}
       />
     )
   }
@@ -605,6 +610,53 @@ export class RepositoryView extends React.Component<
     console.log('Terminal exited:', terminalTabPath)
     // Optionally close after a delay or leave it for user to close manually
     // this.onCodeTabClose(terminalTabPath)
+  }
+
+  private onOpenClaude = async () => {
+    const repositoryPath = this.props.repository.path
+    const { spawn } = require('child_process')
+    const platform = process.platform
+
+    // Command with fallback: try 'claude' first, then 'npx @anthropic-ai/claude-code'
+    const claudeCommand = `claude || npx @anthropic-ai/claude-code`
+
+    if (platform === 'darwin') {
+      // macOS: Use AppleScript to open Terminal.app and run claude
+      const escapedPath = repositoryPath.replace(/'/g, "'\\''")
+      const script = `
+        tell application "Terminal"
+          activate
+          do script "cd '${escapedPath}' && (${claudeCommand})"
+        end tell
+      `
+      spawn('osascript', ['-e', script])
+    } else if (platform === 'linux') {
+      // Linux: Try common terminal emulators with claude command
+      const terminals = [
+        { cmd: 'gnome-terminal', args: ['--working-directory', repositoryPath, '--', 'bash', '-c', `${claudeCommand}; exec bash`] },
+        { cmd: 'konsole', args: ['--workdir', repositoryPath, '-e', 'bash', '-c', `${claudeCommand}; exec bash`] },
+        { cmd: 'xfce4-terminal', args: ['--working-directory', repositoryPath, '-e', `bash -c "${claudeCommand}; exec bash"`] },
+        { cmd: 'xterm', args: ['-e', `cd "${repositoryPath}" && ${claudeCommand}; exec bash`] },
+      ]
+
+      const tryTerminal = (index: number) => {
+        if (index >= terminals.length) {
+          log.error('No terminal emulator found for Claude')
+          return
+        }
+        const { cmd, args } = terminals[index]
+        const child = spawn(cmd, args, { detached: true, stdio: 'ignore' })
+        child.on('error', () => tryTerminal(index + 1))
+        child.unref()
+      }
+      tryTerminal(0)
+    } else if (platform === 'win32') {
+      // Windows: Use cmd.exe to run claude with fallback
+      spawn('cmd.exe', ['/c', 'start', 'cmd.exe', '/k', `cd /d "${repositoryPath}" && (${claudeCommand})`], {
+        detached: true,
+        stdio: 'ignore',
+      })
+    }
   }
 
   private onIssuesRefresh = () => {
@@ -855,6 +907,7 @@ export class RepositoryView extends React.Component<
         onTabUnsavedChange={this.onCodeTabUnsavedChange}
         onTerminalExit={this.onTerminalExit}
         onWikiLinkClick={this.onWikiLinkClick}
+        editorSettings={this.props.editorSettings}
       />
     )
   }

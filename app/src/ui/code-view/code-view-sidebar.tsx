@@ -1,10 +1,48 @@
 import * as React from 'react'
 import * as Path from 'path'
 import * as fs from 'fs'
+import { spawn } from 'child_process'
 import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
 import { showContextualMenu } from '../../lib/menu-item'
 import { IMenuItem } from '../../lib/menu-item'
+
+/** Script button configuration */
+interface IScriptConfig {
+  readonly id: string
+  readonly file: string
+  readonly label: string
+  readonly icon: typeof octicons.play
+  readonly className?: string
+}
+
+/** All supported utility scripts (shown in overflow row) */
+const UtilityScripts: ReadonlyArray<IScriptConfig> = [
+  { id: 'build', file: 'build.sh', label: 'Build', icon: octicons.package_ },
+  { id: 'dev', file: 'dev.sh', label: 'Dev', icon: octicons.play },
+  { id: 'serve', file: 'serve.sh', label: 'Serve', icon: octicons.server },
+  { id: 'watch', file: 'watch.sh', label: 'Watch', icon: octicons.eye },
+  { id: 'test', file: 'test.sh', label: 'Test', icon: octicons.beaker },
+  { id: 'lint', file: 'lint.sh', label: 'Lint', icon: octicons.checklist },
+  { id: 'setup', file: 'setup.sh', label: 'Setup', icon: octicons.gear },
+  { id: 'install', file: 'install.sh', label: 'Install', icon: octicons.download },
+  { id: 'bootstrap', file: 'bootstrap.sh', label: 'Bootstrap', icon: octicons.rocket },
+  { id: 'migrate', file: 'migrate.sh', label: 'Migrate', icon: octicons.database },
+  { id: 'seed', file: 'seed.sh', label: 'Seed', icon: octicons.database },
+  { id: 'deploy', file: 'deploy.sh', label: 'Deploy', icon: octicons.upload },
+  { id: 'release', file: 'release.sh', label: 'Release', icon: octicons.tag },
+  { id: 'clean', file: 'clean.sh', label: 'Clean', icon: octicons.trash },
+  { id: 'docker-up', file: 'docker-up.sh', label: 'Docker Up', icon: octicons.container },
+  { id: 'docker-down', file: 'docker-down.sh', label: 'Docker Down', icon: octicons.container },
+]
+
+/** Dev scripts (shown in dedicated row) */
+const DevScripts: ReadonlyArray<IScriptConfig> = [
+  { id: 'run', file: 'run.sh', label: 'Run', icon: octicons.play },
+  { id: 'start-dev', file: 'start-dev.sh', label: 'Start Dev', icon: octicons.play, className: 'start-dev' },
+  { id: 'stop-dev', file: 'stop-dev.sh', label: 'Stop Dev', icon: octicons.square, className: 'stop-dev' },
+  { id: 'restart-dev', file: 'restart-dev.sh', label: 'Restart Dev', icon: octicons.sync, className: 'restart-dev' },
+]
 
 interface IFileTreeNode {
   name: string
@@ -22,6 +60,7 @@ interface ICodeViewSidebarProps {
   readonly onDeleteItem?: (itemPath: string, isDirectory: boolean) => void
   readonly onRenameItem?: (itemPath: string) => void
   readonly onOpenTerminal?: () => void
+  readonly onOpenClaude?: () => void
 }
 
 interface ICodeViewSidebarState {
@@ -36,6 +75,12 @@ interface ICodeViewSidebarState {
   readonly draggingPath: string | null
   /** Path of folder being hovered over during drag */
   readonly dropTargetPath: string | null
+  /** Set of available script IDs that exist in the repository */
+  readonly availableScripts: Set<string>
+  /** Whether CLAUDE.md or claude.md exists in the repository root */
+  readonly hasClaudeMd: boolean
+  /** Whether the scripts overflow menu is open */
+  readonly scriptsMenuOpen: boolean
 }
 
 export class CodeViewSidebar extends React.Component<
@@ -57,6 +102,9 @@ export class CodeViewSidebar extends React.Component<
       newItemName: '',
       draggingPath: null,
       dropTargetPath: null,
+      availableScripts: new Set(),
+      hasClaudeMd: false,
+      scriptsMenuOpen: false,
     }
   }
 
@@ -129,10 +177,40 @@ export class CodeViewSidebar extends React.Component<
     this.setState({ isLoading: true })
     try {
       const tree = await this.buildFileTree(this.props.repositoryPath)
-      this.setState({ tree, isLoading: false })
+
+      // Check all scripts (both utility and dev scripts)
+      const allScripts = [...UtilityScripts, ...DevScripts]
+      const scriptChecks = await Promise.all(
+        allScripts.map(async script => ({
+          id: script.id,
+          exists: await this.checkFileExists(Path.join(this.props.repositoryPath, script.file))
+        }))
+      )
+
+      const availableScripts = new Set(
+        scriptChecks.filter(s => s.exists).map(s => s.id)
+      )
+
+      // Check for CLAUDE.md
+      const [hasClaudeMdUpper, hasClaudeMdLower] = await Promise.all([
+        this.checkFileExists(Path.join(this.props.repositoryPath, 'CLAUDE.md')),
+        this.checkFileExists(Path.join(this.props.repositoryPath, 'claude.md')),
+      ])
+      const hasClaudeMd = hasClaudeMdUpper || hasClaudeMdLower
+
+      this.setState({ tree, isLoading: false, availableScripts, hasClaudeMd })
     } catch (error) {
       console.error('Failed to load file tree:', error)
       this.setState({ isLoading: false })
+    }
+  }
+
+  private async checkFileExists(filePath: string): Promise<boolean> {
+    try {
+      await fs.promises.access(filePath, fs.constants.F_OK)
+      return true
+    } catch {
+      return false
     }
   }
 
@@ -501,6 +579,39 @@ export class CodeViewSidebar extends React.Component<
     })
   }
 
+  private onScriptClick = (script: IScriptConfig) => {
+    this.runShellScript(script.file)
+  }
+
+  private runShellScript(scriptName: string) {
+    const scriptPath = Path.join(this.props.repositoryPath, scriptName)
+    const child = spawn('bash', [scriptPath], {
+      cwd: this.props.repositoryPath,
+      detached: true,
+      stdio: 'ignore',
+    })
+    child.unref()
+  }
+
+  private onScriptsOverflowClick = () => {
+    const { availableScripts } = this.state
+    const availableUtilityScripts = UtilityScripts.filter(s => availableScripts.has(s.id))
+
+    // Skip the first 3 that are shown as buttons
+    const overflowScripts = availableUtilityScripts.slice(3)
+
+    if (overflowScripts.length === 0) {
+      return
+    }
+
+    const items: IMenuItem[] = overflowScripts.map(script => ({
+      label: script.label,
+      action: () => this.onScriptClick(script),
+    }))
+
+    showContextualMenu(items)
+  }
+
   private onNewItemNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     this.setState({ newItemName: e.target.value })
   }
@@ -592,6 +703,67 @@ export class CodeViewSidebar extends React.Component<
     )
   }
 
+  private renderUtilityScriptsRow(): JSX.Element | null {
+    const { creatingType, availableScripts } = this.state
+    if (creatingType) return null
+
+    const availableUtilityScripts = UtilityScripts.filter(s => availableScripts.has(s.id))
+    if (availableUtilityScripts.length === 0) return null
+
+    // Show first 3 as buttons, rest in overflow menu
+    const visibleScripts = availableUtilityScripts.slice(0, 3)
+    const hasOverflow = availableUtilityScripts.length > 3
+
+    return (
+      <div className="file-tree-scripts-row">
+        {visibleScripts.map(script => (
+          <button
+            key={script.id}
+            className="file-tree-script-button"
+            onClick={() => this.onScriptClick(script)}
+            title={`Run ${script.file}`}
+          >
+            <Octicon symbol={script.icon} />
+            <span>{script.label}</span>
+          </button>
+        ))}
+        {hasOverflow && (
+          <button
+            className="file-tree-script-button overflow-button"
+            onClick={this.onScriptsOverflowClick}
+            title="More scripts..."
+          >
+            <Octicon symbol={octicons.kebabHorizontal} />
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  private renderDevScriptsRow(): JSX.Element | null {
+    const { creatingType, availableScripts } = this.state
+    if (creatingType) return null
+
+    const availableDevScripts = DevScripts.filter(s => availableScripts.has(s.id))
+    if (availableDevScripts.length === 0) return null
+
+    return (
+      <div className="file-tree-run-action">
+        {availableDevScripts.map(script => (
+          <button
+            key={script.id}
+            className={`file-tree-run-button ${script.className || ''}`}
+            onClick={() => this.onScriptClick(script)}
+            title={`Run ${script.file}`}
+          >
+            <Octicon symbol={script.icon} />
+            <span>{script.label}</span>
+          </button>
+        ))}
+      </div>
+    )
+  }
+
   public render() {
     const { tree, isLoading, creatingType } = this.state
 
@@ -617,6 +789,8 @@ export class CodeViewSidebar extends React.Component<
           {this.renderNewItemInput()}
           {tree.children?.map(child => this.renderNode(child, 0))}
         </div>
+        {this.renderUtilityScriptsRow()}
+        {this.renderDevScriptsRow()}
         {!creatingType && (
           <div className="file-tree-actions">
             <button
@@ -643,6 +817,16 @@ export class CodeViewSidebar extends React.Component<
               <Octicon symbol={octicons.terminal} />
               <span>Terminal</span>
             </button>
+            {this.state.hasClaudeMd && (
+              <button
+                className="file-tree-action-button claude-button"
+                onClick={this.props.onOpenClaude}
+                title="Open Claude Code"
+              >
+                <Octicon symbol={octicons.copilot} />
+                <span>Claude</span>
+              </button>
+            )}
           </div>
         )}
       </div>
