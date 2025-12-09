@@ -882,6 +882,76 @@
   }
 }
 
+// Milkdown WYSIWYG editor wrapper
+.milkdown-editor-wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+
+  &[data-readonly="true"] {
+    .milkdown-toolbar {
+      display: none;
+    }
+  }
+}
+
+// Milkdown formatting toolbar
+.milkdown-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--box-alt-background-color);
+  border-bottom: 1px solid var(--box-border-color);
+  flex-shrink: 0;
+
+  .toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .toolbar-separator {
+    width: 1px;
+    height: 20px;
+    background: var(--box-border-color);
+    margin: 0 4px;
+  }
+
+  .toolbar-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: var(--border-radius);
+    background: transparent;
+    color: var(--text-secondary-color);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all 0.15s ease;
+
+    &:hover {
+      background: var(--box-selected-background-color);
+      color: var(--text-color);
+    }
+
+    &:active {
+      background: var(--box-selected-active-background-color);
+    }
+
+    .octicon {
+      width: 16px;
+      height: 16px;
+    }
+  }
+}
+
 // Milkdown WYSIWYG editor styles
 .milkdown-editor-container {
   display: flex;

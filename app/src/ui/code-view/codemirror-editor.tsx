@@ -18,7 +18,586 @@ import { html } from '@codemirror/lang-html'
 import { python } from '@codemirror/lang-python'
 import { yaml } from '@codemirror/lang-yaml'
 import { StreamLanguage } from '@codemirror/language'
-import { shell } from '@codemirror/legacy-modes/mode/shell'
+
+/** Language loader function type */
+type LanguageLoader = () => Promise<Extension | null>
+
+/**
+ * Comprehensive mapping of file extensions to language loaders.
+ * Uses official CM6 packages where available, falls back to legacy modes.
+ */
+const languageLoaders: Record<string, LanguageLoader> = {
+  // === Official CM6 packages (better parsing quality) ===
+  '.js': async () => javascript({ jsx: true }),
+  '.mjs': async () => javascript({ jsx: true }),
+  '.cjs': async () => javascript({ jsx: true }),
+  '.jsx': async () => javascript({ jsx: true }),
+  '.ts': async () => javascript({ jsx: true, typescript: true }),
+  '.mts': async () => javascript({ jsx: true, typescript: true }),
+  '.cts': async () => javascript({ jsx: true, typescript: true }),
+  '.tsx': async () => javascript({ jsx: true, typescript: true }),
+  '.md': async () => markdown(),
+  '.markdown': async () => markdown(),
+  '.mdx': async () => markdown(),
+  '.css': async () => css(),
+  '.json': async () => json(),
+  '.jsonc': async () => json(),
+  '.json5': async () => json(),
+  '.html': async () => html(),
+  '.htm': async () => html(),
+  '.py': async () => python(),
+  '.pyw': async () => python(),
+  '.pyi': async () => python(),
+  '.yml': async () => yaml(),
+  '.yaml': async () => yaml(),
+
+  // === Legacy modes (loaded on demand) ===
+
+  // Shell
+  '.sh': async () => {
+    const { shell } = await import('@codemirror/legacy-modes/mode/shell')
+    return StreamLanguage.define(shell)
+  },
+  '.bash': async () => {
+    const { shell } = await import('@codemirror/legacy-modes/mode/shell')
+    return StreamLanguage.define(shell)
+  },
+  '.zsh': async () => {
+    const { shell } = await import('@codemirror/legacy-modes/mode/shell')
+    return StreamLanguage.define(shell)
+  },
+  '.fish': async () => {
+    const { shell } = await import('@codemirror/legacy-modes/mode/shell')
+    return StreamLanguage.define(shell)
+  },
+  '.bashrc': async () => {
+    const { shell } = await import('@codemirror/legacy-modes/mode/shell')
+    return StreamLanguage.define(shell)
+  },
+  '.zshrc': async () => {
+    const { shell } = await import('@codemirror/legacy-modes/mode/shell')
+    return StreamLanguage.define(shell)
+  },
+  '.profile': async () => {
+    const { shell } = await import('@codemirror/legacy-modes/mode/shell')
+    return StreamLanguage.define(shell)
+  },
+
+  // Go
+  '.go': async () => {
+    const { go } = await import('@codemirror/legacy-modes/mode/go')
+    return StreamLanguage.define(go)
+  },
+
+  // Rust
+  '.rs': async () => {
+    const { rust } = await import('@codemirror/legacy-modes/mode/rust')
+    return StreamLanguage.define(rust)
+  },
+
+  // Ruby
+  '.rb': async () => {
+    const { ruby } = await import('@codemirror/legacy-modes/mode/ruby')
+    return StreamLanguage.define(ruby)
+  },
+  '.rake': async () => {
+    const { ruby } = await import('@codemirror/legacy-modes/mode/ruby')
+    return StreamLanguage.define(ruby)
+  },
+  '.gemspec': async () => {
+    const { ruby } = await import('@codemirror/legacy-modes/mode/ruby')
+    return StreamLanguage.define(ruby)
+  },
+  'Gemfile': async () => {
+    const { ruby } = await import('@codemirror/legacy-modes/mode/ruby')
+    return StreamLanguage.define(ruby)
+  },
+  'Rakefile': async () => {
+    const { ruby } = await import('@codemirror/legacy-modes/mode/ruby')
+    return StreamLanguage.define(ruby)
+  },
+
+  // Swift
+  '.swift': async () => {
+    const { swift } = await import('@codemirror/legacy-modes/mode/swift')
+    return StreamLanguage.define(swift)
+  },
+
+  // Lua
+  '.lua': async () => {
+    const { lua } = await import('@codemirror/legacy-modes/mode/lua')
+    return StreamLanguage.define(lua)
+  },
+
+  // C/C++/Objective-C
+  '.c': async () => {
+    const { c } = await import('@codemirror/legacy-modes/mode/clike')
+    return StreamLanguage.define(c)
+  },
+  '.h': async () => {
+    const { c } = await import('@codemirror/legacy-modes/mode/clike')
+    return StreamLanguage.define(c)
+  },
+  '.cpp': async () => {
+    const { cpp } = await import('@codemirror/legacy-modes/mode/clike')
+    return StreamLanguage.define(cpp)
+  },
+  '.cxx': async () => {
+    const { cpp } = await import('@codemirror/legacy-modes/mode/clike')
+    return StreamLanguage.define(cpp)
+  },
+  '.cc': async () => {
+    const { cpp } = await import('@codemirror/legacy-modes/mode/clike')
+    return StreamLanguage.define(cpp)
+  },
+  '.hpp': async () => {
+    const { cpp } = await import('@codemirror/legacy-modes/mode/clike')
+    return StreamLanguage.define(cpp)
+  },
+  '.hxx': async () => {
+    const { cpp } = await import('@codemirror/legacy-modes/mode/clike')
+    return StreamLanguage.define(cpp)
+  },
+  '.m': async () => {
+    const { objectiveC } = await import('@codemirror/legacy-modes/mode/clike')
+    return StreamLanguage.define(objectiveC)
+  },
+  '.mm': async () => {
+    const { objectiveCpp } = await import('@codemirror/legacy-modes/mode/clike')
+    return StreamLanguage.define(objectiveCpp)
+  },
+
+  // Java
+  '.java': async () => {
+    const { java } = await import('@codemirror/legacy-modes/mode/clike')
+    return StreamLanguage.define(java)
+  },
+
+  // Kotlin
+  '.kt': async () => {
+    const { kotlin } = await import('@codemirror/legacy-modes/mode/clike')
+    return StreamLanguage.define(kotlin)
+  },
+  '.kts': async () => {
+    const { kotlin } = await import('@codemirror/legacy-modes/mode/clike')
+    return StreamLanguage.define(kotlin)
+  },
+
+  // Scala
+  '.scala': async () => {
+    const { scala } = await import('@codemirror/legacy-modes/mode/clike')
+    return StreamLanguage.define(scala)
+  },
+  '.sc': async () => {
+    const { scala } = await import('@codemirror/legacy-modes/mode/clike')
+    return StreamLanguage.define(scala)
+  },
+
+  // C#
+  '.cs': async () => {
+    const { csharp } = await import('@codemirror/legacy-modes/mode/clike')
+    return StreamLanguage.define(csharp)
+  },
+
+  // SQL
+  '.sql': async () => {
+    const { standardSQL } = await import('@codemirror/legacy-modes/mode/sql')
+    return StreamLanguage.define(standardSQL)
+  },
+
+  // Perl
+  '.pl': async () => {
+    const { perl } = await import('@codemirror/legacy-modes/mode/perl')
+    return StreamLanguage.define(perl)
+  },
+  '.pm': async () => {
+    const { perl } = await import('@codemirror/legacy-modes/mode/perl')
+    return StreamLanguage.define(perl)
+  },
+
+  // R
+  '.r': async () => {
+    const { r } = await import('@codemirror/legacy-modes/mode/r')
+    return StreamLanguage.define(r)
+  },
+  '.R': async () => {
+    const { r } = await import('@codemirror/legacy-modes/mode/r')
+    return StreamLanguage.define(r)
+  },
+
+  // Haskell
+  '.hs': async () => {
+    const { haskell } = await import('@codemirror/legacy-modes/mode/haskell')
+    return StreamLanguage.define(haskell)
+  },
+  '.lhs': async () => {
+    const { haskell } = await import('@codemirror/legacy-modes/mode/haskell')
+    return StreamLanguage.define(haskell)
+  },
+
+  // Erlang/Elixir
+  '.erl': async () => {
+    const { erlang } = await import('@codemirror/legacy-modes/mode/erlang')
+    return StreamLanguage.define(erlang)
+  },
+  '.ex': async () => {
+    const { erlang } = await import('@codemirror/legacy-modes/mode/erlang')
+    return StreamLanguage.define(erlang) // Close enough for Elixir
+  },
+  '.exs': async () => {
+    const { erlang } = await import('@codemirror/legacy-modes/mode/erlang')
+    return StreamLanguage.define(erlang)
+  },
+
+  // Clojure
+  '.clj': async () => {
+    const { clojure } = await import('@codemirror/legacy-modes/mode/clojure')
+    return StreamLanguage.define(clojure)
+  },
+  '.cljs': async () => {
+    const { clojure } = await import('@codemirror/legacy-modes/mode/clojure')
+    return StreamLanguage.define(clojure)
+  },
+  '.cljc': async () => {
+    const { clojure } = await import('@codemirror/legacy-modes/mode/clojure')
+    return StreamLanguage.define(clojure)
+  },
+  '.edn': async () => {
+    const { clojure } = await import('@codemirror/legacy-modes/mode/clojure')
+    return StreamLanguage.define(clojure)
+  },
+
+  // Lisp/Scheme
+  '.lisp': async () => {
+    const { commonLisp } = await import('@codemirror/legacy-modes/mode/commonlisp')
+    return StreamLanguage.define(commonLisp)
+  },
+  '.el': async () => {
+    const { commonLisp } = await import('@codemirror/legacy-modes/mode/commonlisp')
+    return StreamLanguage.define(commonLisp)
+  },
+  '.scm': async () => {
+    const { scheme } = await import('@codemirror/legacy-modes/mode/scheme')
+    return StreamLanguage.define(scheme)
+  },
+  '.rkt': async () => {
+    const { scheme } = await import('@codemirror/legacy-modes/mode/scheme')
+    return StreamLanguage.define(scheme)
+  },
+
+  // Julia
+  '.jl': async () => {
+    const { julia } = await import('@codemirror/legacy-modes/mode/julia')
+    return StreamLanguage.define(julia)
+  },
+
+  // XML
+  '.xml': async () => {
+    const { xml } = await import('@codemirror/legacy-modes/mode/xml')
+    return StreamLanguage.define(xml)
+  },
+  '.xsl': async () => {
+    const { xml } = await import('@codemirror/legacy-modes/mode/xml')
+    return StreamLanguage.define(xml)
+  },
+  '.xsd': async () => {
+    const { xml } = await import('@codemirror/legacy-modes/mode/xml')
+    return StreamLanguage.define(xml)
+  },
+  '.svg': async () => {
+    const { xml } = await import('@codemirror/legacy-modes/mode/xml')
+    return StreamLanguage.define(xml)
+  },
+  '.plist': async () => {
+    const { xml } = await import('@codemirror/legacy-modes/mode/xml')
+    return StreamLanguage.define(xml)
+  },
+
+  // Config files
+  '.toml': async () => {
+    const { toml } = await import('@codemirror/legacy-modes/mode/toml')
+    return StreamLanguage.define(toml)
+  },
+  '.ini': async () => {
+    const { properties } = await import('@codemirror/legacy-modes/mode/properties')
+    return StreamLanguage.define(properties)
+  },
+  '.properties': async () => {
+    const { properties } = await import('@codemirror/legacy-modes/mode/properties')
+    return StreamLanguage.define(properties)
+  },
+  '.env': async () => {
+    const { properties } = await import('@codemirror/legacy-modes/mode/properties')
+    return StreamLanguage.define(properties)
+  },
+
+  // Docker
+  'Dockerfile': async () => {
+    const { dockerFile } = await import('@codemirror/legacy-modes/mode/dockerfile')
+    return StreamLanguage.define(dockerFile)
+  },
+  '.dockerfile': async () => {
+    const { dockerFile } = await import('@codemirror/legacy-modes/mode/dockerfile')
+    return StreamLanguage.define(dockerFile)
+  },
+
+  // Diff/Patch
+  '.diff': async () => {
+    const { diff } = await import('@codemirror/legacy-modes/mode/diff')
+    return StreamLanguage.define(diff)
+  },
+  '.patch': async () => {
+    const { diff } = await import('@codemirror/legacy-modes/mode/diff')
+    return StreamLanguage.define(diff)
+  },
+
+  // PowerShell
+  '.ps1': async () => {
+    const { powerShell } = await import('@codemirror/legacy-modes/mode/powershell')
+    return StreamLanguage.define(powerShell)
+  },
+  '.psm1': async () => {
+    const { powerShell } = await import('@codemirror/legacy-modes/mode/powershell')
+    return StreamLanguage.define(powerShell)
+  },
+  '.psd1': async () => {
+    const { powerShell } = await import('@codemirror/legacy-modes/mode/powershell')
+    return StreamLanguage.define(powerShell)
+  },
+
+  // Nginx
+  '.nginx': async () => {
+    const { nginx } = await import('@codemirror/legacy-modes/mode/nginx')
+    return StreamLanguage.define(nginx)
+  },
+  'nginx.conf': async () => {
+    const { nginx } = await import('@codemirror/legacy-modes/mode/nginx')
+    return StreamLanguage.define(nginx)
+  },
+
+  // CMake
+  'CMakeLists.txt': async () => {
+    const { cmake } = await import('@codemirror/legacy-modes/mode/cmake')
+    return StreamLanguage.define(cmake)
+  },
+  '.cmake': async () => {
+    const { cmake } = await import('@codemirror/legacy-modes/mode/cmake')
+    return StreamLanguage.define(cmake)
+  },
+
+  // Protobuf
+  '.proto': async () => {
+    const { protobuf } = await import('@codemirror/legacy-modes/mode/protobuf')
+    return StreamLanguage.define(protobuf)
+  },
+
+  // GraphQL (use JavaScript as fallback)
+  '.graphql': async () => javascript(),
+  '.gql': async () => javascript(),
+
+  // SCSS/SASS/LESS (use CSS)
+  '.scss': async () => css(),
+  '.sass': async () => css(),
+  '.less': async () => css(),
+
+  // CoffeeScript
+  '.coffee': async () => {
+    const { coffeeScript } = await import('@codemirror/legacy-modes/mode/coffeescript')
+    return StreamLanguage.define(coffeeScript)
+  },
+
+  // Elm
+  '.elm': async () => {
+    const { elm } = await import('@codemirror/legacy-modes/mode/elm')
+    return StreamLanguage.define(elm)
+  },
+
+  // F#
+  '.fs': async () => {
+    const { fSharp } = await import('@codemirror/legacy-modes/mode/mllike')
+    return StreamLanguage.define(fSharp)
+  },
+  '.fsx': async () => {
+    const { fSharp } = await import('@codemirror/legacy-modes/mode/mllike')
+    return StreamLanguage.define(fSharp)
+  },
+
+  // OCaml
+  '.ml': async () => {
+    const { oCaml } = await import('@codemirror/legacy-modes/mode/mllike')
+    return StreamLanguage.define(oCaml)
+  },
+  '.mli': async () => {
+    const { oCaml } = await import('@codemirror/legacy-modes/mode/mllike')
+    return StreamLanguage.define(oCaml)
+  },
+
+  // Groovy
+  '.groovy': async () => {
+    const { groovy } = await import('@codemirror/legacy-modes/mode/groovy')
+    return StreamLanguage.define(groovy)
+  },
+  '.gradle': async () => {
+    const { groovy } = await import('@codemirror/legacy-modes/mode/groovy')
+    return StreamLanguage.define(groovy)
+  },
+
+  // Pascal/Delphi
+  '.pas': async () => {
+    const { pascal } = await import('@codemirror/legacy-modes/mode/pascal')
+    return StreamLanguage.define(pascal)
+  },
+  '.dpr': async () => {
+    const { pascal } = await import('@codemirror/legacy-modes/mode/pascal')
+    return StreamLanguage.define(pascal)
+  },
+
+  // Fortran
+  '.f': async () => {
+    const { fortran } = await import('@codemirror/legacy-modes/mode/fortran')
+    return StreamLanguage.define(fortran)
+  },
+  '.f90': async () => {
+    const { fortran } = await import('@codemirror/legacy-modes/mode/fortran')
+    return StreamLanguage.define(fortran)
+  },
+  '.f95': async () => {
+    const { fortran } = await import('@codemirror/legacy-modes/mode/fortran')
+    return StreamLanguage.define(fortran)
+  },
+
+  // COBOL
+  '.cob': async () => {
+    const { cobol } = await import('@codemirror/legacy-modes/mode/cobol')
+    return StreamLanguage.define(cobol)
+  },
+  '.cbl': async () => {
+    const { cobol } = await import('@codemirror/legacy-modes/mode/cobol')
+    return StreamLanguage.define(cobol)
+  },
+
+  // D
+  '.d': async () => {
+    const { d } = await import('@codemirror/legacy-modes/mode/d')
+    return StreamLanguage.define(d)
+  },
+
+  // Crystal
+  '.cr': async () => {
+    const { crystal } = await import('@codemirror/legacy-modes/mode/crystal')
+    return StreamLanguage.define(crystal)
+  },
+
+  // TCL
+  '.tcl': async () => {
+    const { tcl } = await import('@codemirror/legacy-modes/mode/tcl')
+    return StreamLanguage.define(tcl)
+  },
+
+  // Verilog/VHDL
+  '.v': async () => {
+    const { verilog } = await import('@codemirror/legacy-modes/mode/verilog')
+    return StreamLanguage.define(verilog)
+  },
+  '.sv': async () => {
+    const { verilog } = await import('@codemirror/legacy-modes/mode/verilog')
+    return StreamLanguage.define(verilog)
+  },
+  '.vhd': async () => {
+    const { vhdl } = await import('@codemirror/legacy-modes/mode/vhdl')
+    return StreamLanguage.define(vhdl)
+  },
+  '.vhdl': async () => {
+    const { vhdl } = await import('@codemirror/legacy-modes/mode/vhdl')
+    return StreamLanguage.define(vhdl)
+  },
+
+  // Pug/Jade
+  '.pug': async () => {
+    const { pug } = await import('@codemirror/legacy-modes/mode/pug')
+    return StreamLanguage.define(pug)
+  },
+  '.jade': async () => {
+    const { pug } = await import('@codemirror/legacy-modes/mode/pug')
+    return StreamLanguage.define(pug)
+  },
+
+  // Stylus
+  '.styl': async () => {
+    const { stylus } = await import('@codemirror/legacy-modes/mode/stylus')
+    return StreamLanguage.define(stylus)
+  },
+
+  // LaTeX
+  '.tex': async () => {
+    const { stexMath } = await import('@codemirror/legacy-modes/mode/stex')
+    return StreamLanguage.define(stexMath)
+  },
+  '.latex': async () => {
+    const { stexMath } = await import('@codemirror/legacy-modes/mode/stex')
+    return StreamLanguage.define(stexMath)
+  },
+  '.sty': async () => {
+    const { stexMath } = await import('@codemirror/legacy-modes/mode/stex')
+    return StreamLanguage.define(stexMath)
+  },
+
+  // VB
+  '.vb': async () => {
+    const { vb } = await import('@codemirror/legacy-modes/mode/vb')
+    return StreamLanguage.define(vb)
+  },
+  '.vbs': async () => {
+    const { vbScript } = await import('@codemirror/legacy-modes/mode/vbscript')
+    return StreamLanguage.define(vbScript)
+  },
+
+  // Makefile
+  'Makefile': async () => {
+    const { shell } = await import('@codemirror/legacy-modes/mode/shell')
+    return StreamLanguage.define(shell)
+  },
+  '.mk': async () => {
+    const { shell } = await import('@codemirror/legacy-modes/mode/shell')
+    return StreamLanguage.define(shell)
+  },
+
+  // Assembly (use gas mode)
+  '.asm': async () => {
+    const { gas } = await import('@codemirror/legacy-modes/mode/gas')
+    return StreamLanguage.define(gas)
+  },
+  '.s': async () => {
+    const { gas } = await import('@codemirror/legacy-modes/mode/gas')
+    return StreamLanguage.define(gas)
+  },
+
+  // Puppet
+  '.pp': async () => {
+    const { puppet } = await import('@codemirror/legacy-modes/mode/puppet')
+    return StreamLanguage.define(puppet)
+  },
+
+  // Terraform (use properties as fallback)
+  '.tf': async () => {
+    const { properties } = await import('@codemirror/legacy-modes/mode/properties')
+    return StreamLanguage.define(properties)
+  },
+  '.tfvars': async () => {
+    const { properties } = await import('@codemirror/legacy-modes/mode/properties')
+    return StreamLanguage.define(properties)
+  },
+
+  // WebAssembly
+  '.wat': async () => {
+    const { wast } = await import('@codemirror/legacy-modes/mode/wast')
+    return StreamLanguage.define(wast)
+  },
+  '.wast': async () => {
+    const { wast } = await import('@codemirror/legacy-modes/mode/wast')
+    return StreamLanguage.define(wast)
+  },
+}
 
 interface ICodeMirrorEditorProps {
   /** Initial content of the editor */
@@ -37,47 +616,39 @@ interface ICodeMirrorEditorProps {
   readonly settings?: IEditorSettings
 }
 
-/** Get the appropriate language extension based on file extension */
-function getLanguageExtension(filePath: string): Extension | null {
-  const ext = Path.extname(filePath).toLowerCase()
+/** Cache for loaded language extensions */
+const languageCache = new Map<string, Extension>()
 
-  switch (ext) {
-    case '.js':
-    case '.jsx':
-      return javascript({ jsx: true })
-    case '.ts':
-    case '.tsx':
-      return javascript({ jsx: true, typescript: true })
-    case '.md':
-    case '.markdown':
-    case '.mdx':
-      return markdown()
-    case '.css':
-      return css()
-    case '.scss':
-    case '.sass':
-    case '.less':
-      return css() // Basic CSS highlighting for SCSS/LESS
-    case '.json':
-      return json()
-    case '.html':
-    case '.htm':
-      return html()
-    case '.py':
-    case '.pyw':
-      return python()
-    case '.yml':
-    case '.yaml':
-      return yaml()
-    case '.sh':
-    case '.bash':
-    case '.zsh':
-    case '.bashrc':
-    case '.zshrc':
-    case '.profile':
-      return StreamLanguage.define(shell)
-    default:
-      return null
+/**
+ * Get the appropriate language extension based on file path.
+ * Uses async loading for legacy modes to keep initial bundle small.
+ */
+async function getLanguageExtension(filePath: string): Promise<Extension | null> {
+  const ext = Path.extname(filePath).toLowerCase()
+  const fileName = Path.basename(filePath)
+
+  // Check cache first
+  const cacheKey = ext || fileName
+  const cached = languageCache.get(cacheKey)
+  if (cached) {
+    return cached
+  }
+
+  // Try to find a loader for this extension or filename
+  const loader = languageLoaders[ext] || languageLoaders[fileName]
+  if (!loader) {
+    return null
+  }
+
+  try {
+    const extension = await loader()
+    if (extension) {
+      languageCache.set(cacheKey, extension)
+    }
+    return extension
+  } catch (error) {
+    console.warn(`Failed to load language for ${filePath}:`, error)
+    return null
   }
 }
 
@@ -385,12 +956,16 @@ function createTheme(settings: IEditorSettings): Extension {
 export class CodeMirrorEditor extends React.Component<ICodeMirrorEditorProps> {
   private containerRef = React.createRef<HTMLDivElement>()
   private editorView: EditorView | null = null
+  private isMounted = false
+  private initCounter = 0 // Track init calls to handle race conditions
 
   public componentDidMount() {
+    this.isMounted = true
     this.initEditor()
   }
 
   public componentWillUnmount() {
+    this.isMounted = false
     this.editorView?.destroy()
   }
 
@@ -402,6 +977,7 @@ export class CodeMirrorEditor extends React.Component<ICodeMirrorEditorProps> {
       prevProps.settings !== this.props.settings
     ) {
       this.editorView?.destroy()
+      this.editorView = null
       this.initEditor()
     }
     // If content changed externally (e.g., file reload), update editor
@@ -419,13 +995,24 @@ export class CodeMirrorEditor extends React.Component<ICodeMirrorEditorProps> {
     }
   }
 
-  private initEditor() {
+  private async initEditor() {
     if (!this.containerRef.current) return
+
+    // Track this init call to handle race conditions
+    const currentInit = ++this.initCounter
 
     const { content, filePath, readOnly, onSave, onCancel, onChange, settings } = this.props
 
     // Use default settings if not provided
     const effectiveSettings = settings || defaultEditorSettings
+
+    // Load language extension asynchronously
+    const langExtension = await getLanguageExtension(filePath)
+
+    // Check if component is still mounted and this is still the latest init call
+    if (!this.isMounted || currentInit !== this.initCounter) {
+      return
+    }
 
     // Get color scheme and create highlight style
     const scheme = colorSchemes[effectiveSettings.theme]
@@ -529,8 +1116,7 @@ export class CodeMirrorEditor extends React.Component<ICodeMirrorEditorProps> {
       })
     )
 
-    // Add language extension if available
-    const langExtension = getLanguageExtension(filePath)
+    // Add language extension if available (loaded asynchronously above)
     if (langExtension) {
       extensions.push(langExtension)
     }

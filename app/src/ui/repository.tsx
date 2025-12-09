@@ -621,12 +621,16 @@ export class RepositoryView extends React.Component<
     const claudeCommand = `claude || npx @anthropic-ai/claude-code`
 
     if (platform === 'darwin') {
-      // macOS: Use AppleScript to open Terminal.app and run claude
+      // macOS: Use AppleScript to open Terminal.app in the repository directory
+      // First cd to the repo, then run claude in the same window
+      // This ensures the terminal's cwd is set before claude starts
       const escapedPath = repositoryPath.replace(/'/g, "'\\''")
       const script = `
         tell application "Terminal"
           activate
-          do script "cd '${escapedPath}' && (${claudeCommand})"
+          set newWindow to do script "cd '${escapedPath}'"
+          delay 0.3
+          do script "claude || npx @anthropic-ai/claude-code" in newWindow
         end tell
       `
       spawn('osascript', ['-e', script])
