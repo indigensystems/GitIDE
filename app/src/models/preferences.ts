@@ -4,10 +4,83 @@ export enum PreferencesTab {
   Git,
   Appearance,
   Editor,
+  Actions,
   Notifications,
   Prompts,
   Advanced,
   Accessibility,
+}
+
+/** Color theme for action buttons */
+export enum ActionButtonTheme {
+  Default = 'default',
+  Dark = 'dark',
+  Custom = 'custom',
+}
+
+/** Configuration for a custom action button */
+export interface ICustomActionButton {
+  /** Unique identifier */
+  readonly id: string
+  /** File name to watch for (e.g., 'build.sh', 'deploy.sh') */
+  readonly file: string
+  /** Display label for the button */
+  readonly label: string
+  /** Custom color (hex) - only used when theme is Custom */
+  readonly color?: string
+}
+
+/** Action buttons settings configuration */
+export interface IActionButtonsSettings {
+  /** Color theme for buttons */
+  readonly theme: ActionButtonTheme
+  /** Custom colors per button ID (only used when theme is Custom) */
+  readonly customColors: { readonly [buttonId: string]: string }
+  /** User-defined action buttons (file patterns to watch) */
+  readonly customButtons: ReadonlyArray<ICustomActionButton>
+}
+
+/** Core scripts that are always watched for (non-configurable) */
+export const CoreActionScripts: ReadonlyArray<{ id: string; file: string; label: string }> = [
+  { id: 'run', file: 'run.sh', label: 'Run' },
+  { id: 'start-dev', file: 'start-dev.sh', label: 'Start Dev' },
+  { id: 'stop-dev', file: 'stop-dev.sh', label: 'Stop Dev' },
+  { id: 'restart-dev', file: 'restart-dev.sh', label: 'Restart Dev' },
+  { id: 'claude', file: 'claude.md', label: 'Claude' },
+]
+
+/** UI action buttons (always visible in file tree footer) */
+export const UIActionButtons: ReadonlyArray<{ id: string; label: string }> = [
+  { id: 'new-file', label: 'New File' },
+  { id: 'new-folder', label: 'New Folder' },
+  { id: 'terminal', label: 'Terminal' },
+]
+
+/** Default custom buttons (the utility scripts from before) */
+export const DefaultCustomButtons: ReadonlyArray<ICustomActionButton> = [
+  { id: 'build', file: 'build.sh', label: 'Build' },
+  { id: 'dev', file: 'dev.sh', label: 'Dev' },
+  { id: 'serve', file: 'serve.sh', label: 'Serve' },
+  { id: 'watch', file: 'watch.sh', label: 'Watch' },
+  { id: 'test', file: 'test.sh', label: 'Test' },
+  { id: 'lint', file: 'lint.sh', label: 'Lint' },
+  { id: 'setup', file: 'setup.sh', label: 'Setup' },
+  { id: 'install', file: 'install.sh', label: 'Install' },
+  { id: 'bootstrap', file: 'bootstrap.sh', label: 'Bootstrap' },
+  { id: 'migrate', file: 'migrate.sh', label: 'Migrate' },
+  { id: 'seed', file: 'seed.sh', label: 'Seed' },
+  { id: 'deploy', file: 'deploy.sh', label: 'Deploy' },
+  { id: 'release', file: 'release.sh', label: 'Release' },
+  { id: 'clean', file: 'clean.sh', label: 'Clean' },
+  { id: 'docker-up', file: 'docker-up.sh', label: 'Docker Up' },
+  { id: 'docker-down', file: 'docker-down.sh', label: 'Docker Down' },
+]
+
+/** Default action buttons settings */
+export const defaultActionButtonsSettings: IActionButtonsSettings = {
+  theme: ActionButtonTheme.Default,
+  customColors: {},
+  customButtons: DefaultCustomButtons,
 }
 
 /** Available color themes for the code editor */

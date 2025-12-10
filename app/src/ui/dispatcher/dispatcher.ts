@@ -90,7 +90,7 @@ import {
 } from '../../models/status'
 import { TipState, IValidBranch } from '../../models/tip'
 import { Banner, BannerType } from '../../models/banner'
-import { IEditorSettings } from '../../models/preferences'
+import { IEditorSettings, IActionButtonsSettings } from '../../models/preferences'
 
 import { ApplicationTheme } from '../lib/application-theme'
 import { installCLI } from '../lib/install-cli'
@@ -4005,6 +4005,10 @@ export class Dispatcher {
 
   public setDiffCheckMarksSetting(diffCheckMarks: boolean) {
     return this.appStore._updateShowDiffCheckMarks(diffCheckMarks)
+  }
+
+  public setActionButtonsSettings(settings: IActionButtonsSettings) {
+    return this.appStore._updateActionButtonsSettings(settings)
   }
 
   public testPruneBranches() {

@@ -1609,6 +1609,7 @@ export class App extends React.Component<IAppProps, IAppState> {
             onEditGlobalGitConfig={this.editGlobalGitConfig}
             underlineLinks={this.state.underlineLinks}
             showDiffCheckMarks={this.state.showDiffCheckMarks}
+            actionButtonsSettings={this.state.actionButtonsSettings}
           />
         )
       case PopupType.RepositorySettings: {
@@ -4001,6 +4002,7 @@ export class App extends React.Component<IAppProps, IAppState> {
           tasksState={state.tasksState}
           selectedProject={state.selectedProject}
           editorSettings={state.editorSettings}
+          actionButtonsSettings={state.actionButtonsSettings}
         />
       )
     } else if (selectedState.type === SelectionType.CloningRepository) {

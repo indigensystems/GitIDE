@@ -46,7 +46,7 @@ import { ITask } from '../lib/databases/tasks-database'
 import { TaskViewMode, TaskSource } from '../lib/stores/tasks-store'
 import { IAPIProjectV2 } from '../lib/api'
 import { PopupType } from '../models/popup'
-import { IEditorSettings } from '../models/preferences'
+import { IEditorSettings, IActionButtonsSettings } from '../models/preferences'
 
 interface IRepositoryViewProps {
   readonly repository: Repository
@@ -133,6 +133,9 @@ interface IRepositoryViewProps {
 
   /** Editor settings for code editor appearance and behavior */
   readonly editorSettings: IEditorSettings
+
+  /** Action buttons settings for file tree buttons */
+  readonly actionButtonsSettings: IActionButtonsSettings
 }
 
 /** Terminal grid layout mode */
@@ -547,6 +550,7 @@ export class RepositoryView extends React.Component<
         onFileCreated={this.onCodeFileSelected}
         onOpenTerminal={this.onOpenTerminal}
         onOpenClaude={this.onOpenClaude}
+        actionButtonsSettings={this.props.actionButtonsSettings}
       />
     )
   }

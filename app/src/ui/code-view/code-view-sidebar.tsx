@@ -6,6 +6,10 @@ import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
 import { showContextualMenu } from '../../lib/menu-item'
 import { IMenuItem } from '../../lib/menu-item'
+import {
+  IActionButtonsSettings,
+  ActionButtonTheme,
+} from '../../models/preferences'
 
 /** Script button configuration */
 interface IScriptConfig {
@@ -16,28 +20,35 @@ interface IScriptConfig {
   readonly className?: string
 }
 
-/** All supported utility scripts (shown in overflow row) */
-const UtilityScripts: ReadonlyArray<IScriptConfig> = [
-  { id: 'build', file: 'build.sh', label: 'Build', icon: octicons.package_ },
-  { id: 'dev', file: 'dev.sh', label: 'Dev', icon: octicons.play },
-  { id: 'serve', file: 'serve.sh', label: 'Serve', icon: octicons.server },
-  { id: 'watch', file: 'watch.sh', label: 'Watch', icon: octicons.eye },
-  { id: 'test', file: 'test.sh', label: 'Test', icon: octicons.beaker },
-  { id: 'lint', file: 'lint.sh', label: 'Lint', icon: octicons.checklist },
-  { id: 'setup', file: 'setup.sh', label: 'Setup', icon: octicons.gear },
-  { id: 'install', file: 'install.sh', label: 'Install', icon: octicons.download },
-  { id: 'bootstrap', file: 'bootstrap.sh', label: 'Bootstrap', icon: octicons.rocket },
-  { id: 'migrate', file: 'migrate.sh', label: 'Migrate', icon: octicons.database },
-  { id: 'seed', file: 'seed.sh', label: 'Seed', icon: octicons.database },
-  { id: 'deploy', file: 'deploy.sh', label: 'Deploy', icon: octicons.upload },
-  { id: 'release', file: 'release.sh', label: 'Release', icon: octicons.tag },
-  { id: 'clean', file: 'clean.sh', label: 'Clean', icon: octicons.trash },
-  { id: 'docker-up', file: 'docker-up.sh', label: 'Docker Up', icon: octicons.container },
-  { id: 'docker-down', file: 'docker-down.sh', label: 'Docker Down', icon: octicons.container },
-]
+/** Get icon for a script based on its id/file */
+function getIconForScript(id: string, file: string): typeof octicons.play {
+  const iconMap: { [key: string]: typeof octicons.play } = {
+    run: octicons.play,
+    'start-dev': octicons.play,
+    'stop-dev': octicons.square,
+    'restart-dev': octicons.sync,
+    build: octicons.package_,
+    dev: octicons.play,
+    serve: octicons.server,
+    watch: octicons.eye,
+    test: octicons.beaker,
+    lint: octicons.checklist,
+    setup: octicons.gear,
+    install: octicons.download,
+    bootstrap: octicons.rocket,
+    migrate: octicons.database,
+    seed: octicons.database,
+    deploy: octicons.upload,
+    release: octicons.tag,
+    clean: octicons.trash,
+    'docker-up': octicons.container,
+    'docker-down': octicons.container,
+  }
+  return iconMap[id] || octicons.play
+}
 
-/** Dev scripts (shown in dedicated row) */
-const DevScripts: ReadonlyArray<IScriptConfig> = [
+/** Core dev scripts that are always watched for (non-configurable) */
+const CoreDevScripts: ReadonlyArray<IScriptConfig> = [
   { id: 'run', file: 'run.sh', label: 'Run', icon: octicons.play },
   { id: 'start-dev', file: 'start-dev.sh', label: 'Start Dev', icon: octicons.play, className: 'start-dev' },
   { id: 'stop-dev', file: 'stop-dev.sh', label: 'Stop Dev', icon: octicons.square, className: 'stop-dev' },
@@ -61,6 +72,7 @@ interface ICodeViewSidebarProps {
   readonly onRenameItem?: (itemPath: string) => void
   readonly onOpenTerminal?: () => void
   readonly onOpenClaude?: () => void
+  readonly actionButtonsSettings: IActionButtonsSettings
 }
 
 interface ICodeViewSidebarState {
@@ -118,6 +130,9 @@ export class CodeViewSidebar extends React.Component<
       this.stopFileWatcher()
       this.loadFileTree()
       this.startFileWatcher()
+    } else if (prevProps.actionButtonsSettings !== this.props.actionButtonsSettings) {
+      // Reload when settings change to update which scripts are watched
+      this.loadFileTree()
     }
   }
 
@@ -178,8 +193,16 @@ export class CodeViewSidebar extends React.Component<
     try {
       const tree = await this.buildFileTree(this.props.repositoryPath)
 
-      // Check all scripts (both utility and dev scripts)
-      const allScripts = [...UtilityScripts, ...DevScripts]
+      // Build list of all scripts to check:
+      // 1. Core dev scripts (always watched)
+      // 2. Custom buttons from settings
+      const { customButtons } = this.props.actionButtonsSettings
+      const customScripts: ReadonlyArray<{ id: string; file: string }> = customButtons.map(b => ({
+        id: b.id,
+        file: b.file,
+      }))
+      const allScripts = [...CoreDevScripts, ...customScripts]
+
       const scriptChecks = await Promise.all(
         allScripts.map(async script => ({
           id: script.id,
@@ -595,7 +618,16 @@ export class CodeViewSidebar extends React.Component<
 
   private onScriptsOverflowClick = () => {
     const { availableScripts } = this.state
-    const availableUtilityScripts = UtilityScripts.filter(s => availableScripts.has(s.id))
+    const { customButtons } = this.props.actionButtonsSettings
+
+    // Build utility scripts from custom buttons
+    const utilityScripts = customButtons.map(b => ({
+      id: b.id,
+      file: b.file,
+      label: b.label,
+      icon: getIconForScript(b.id, b.file),
+    }))
+    const availableUtilityScripts = utilityScripts.filter(s => availableScripts.has(s.id))
 
     // Skip the first 3 that are shown as buttons
     const overflowScripts = availableUtilityScripts.slice(3)
@@ -703,23 +735,78 @@ export class CodeViewSidebar extends React.Component<
     )
   }
 
+  private getButtonStyle(buttonId: string): React.CSSProperties | undefined {
+    const { theme, customColors } = this.props.actionButtonsSettings
+    if (theme !== ActionButtonTheme.Custom) return undefined
+
+    const color = customColors[buttonId] || this.getDefaultColor(buttonId)
+
+    return {
+      backgroundColor: color,
+      borderColor: color,
+    }
+  }
+
+  private getDefaultColor(buttonId: string): string {
+    const colorMap: { [key: string]: string } = {
+      // UI buttons
+      'new-file': '#6b7280',
+      'new-folder': '#6b7280',
+      'terminal': '#6b7280',
+      // Core scripts
+      run: '#2ea043',
+      'start-dev': '#2ea043',
+      'stop-dev': '#da3633',
+      'restart-dev': '#f0883e',
+      claude: '#8b5cf6',
+      // Custom scripts
+      build: '#3b82f6',
+      test: '#22c55e',
+      lint: '#eab308',
+      deploy: '#ec4899',
+    }
+    return colorMap[buttonId] || '#6b7280'
+  }
+
+  private getThemeClass(): string {
+    const { theme } = this.props.actionButtonsSettings
+    switch (theme) {
+      case ActionButtonTheme.Dark:
+        return 'theme-dark'
+      case ActionButtonTheme.Custom:
+        return 'theme-custom'
+      default:
+        return ''
+    }
+  }
+
   private renderUtilityScriptsRow(): JSX.Element | null {
     const { creatingType, availableScripts } = this.state
+    const { customButtons } = this.props.actionButtonsSettings
     if (creatingType) return null
 
-    const availableUtilityScripts = UtilityScripts.filter(s => availableScripts.has(s.id))
+    // Build utility scripts from custom buttons
+    const utilityScripts: ReadonlyArray<IScriptConfig> = customButtons.map(b => ({
+      id: b.id,
+      file: b.file,
+      label: b.label,
+      icon: getIconForScript(b.id, b.file),
+    }))
+    const availableUtilityScripts = utilityScripts.filter(s => availableScripts.has(s.id))
     if (availableUtilityScripts.length === 0) return null
 
     // Show first 3 as buttons, rest in overflow menu
     const visibleScripts = availableUtilityScripts.slice(0, 3)
     const hasOverflow = availableUtilityScripts.length > 3
+    const themeClass = this.getThemeClass()
 
     return (
-      <div className="file-tree-scripts-row">
+      <div className={`file-tree-scripts-row ${themeClass}`}>
         {visibleScripts.map(script => (
           <button
             key={script.id}
             className="file-tree-script-button"
+            style={this.getButtonStyle(script.id)}
             onClick={() => this.onScriptClick(script)}
             title={`Run ${script.file}`}
           >
@@ -744,15 +831,18 @@ export class CodeViewSidebar extends React.Component<
     const { creatingType, availableScripts } = this.state
     if (creatingType) return null
 
-    const availableDevScripts = DevScripts.filter(s => availableScripts.has(s.id))
+    const availableDevScripts = CoreDevScripts.filter(s => availableScripts.has(s.id))
     if (availableDevScripts.length === 0) return null
 
+    const themeClass = this.getThemeClass()
+
     return (
-      <div className="file-tree-run-action">
+      <div className={`file-tree-run-action ${themeClass}`}>
         {availableDevScripts.map(script => (
           <button
             key={script.id}
             className={`file-tree-run-button ${script.className || ''}`}
+            style={this.getButtonStyle(script.id)}
             onClick={() => this.onScriptClick(script)}
             title={`Run ${script.file}`}
           >
@@ -792,9 +882,10 @@ export class CodeViewSidebar extends React.Component<
         {this.renderUtilityScriptsRow()}
         {this.renderDevScriptsRow()}
         {!creatingType && (
-          <div className="file-tree-actions">
+          <div className={`file-tree-actions ${this.getThemeClass()}`}>
             <button
               className="file-tree-action-button"
+              style={this.getButtonStyle('new-file')}
               onClick={this.onNewFileButtonClick}
               title="New File"
             >
@@ -803,6 +894,7 @@ export class CodeViewSidebar extends React.Component<
             </button>
             <button
               className="file-tree-action-button"
+              style={this.getButtonStyle('new-folder')}
               onClick={this.onNewFolderButtonClick}
               title="New Folder"
             >
@@ -811,6 +903,7 @@ export class CodeViewSidebar extends React.Component<
             </button>
             <button
               className="file-tree-action-button"
+              style={this.getButtonStyle('terminal')}
               onClick={this.props.onOpenTerminal}
               title="Open Terminal"
             >
@@ -820,6 +913,7 @@ export class CodeViewSidebar extends React.Component<
             {this.state.hasClaudeMd && (
               <button
                 className="file-tree-action-button claude-button"
+                style={this.getButtonStyle('claude')}
                 onClick={this.props.onOpenClaude}
                 title="Open Claude Code"
               >

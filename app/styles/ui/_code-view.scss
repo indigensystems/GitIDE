@@ -1209,3 +1209,93 @@
     position: absolute;
   }
 }
+
+// Action button theme variants
+.file-tree-run-action,
+.file-tree-scripts-row,
+.file-tree-actions {
+  // Dark theme - muted colors
+  &.theme-dark {
+    .file-tree-run-button {
+      background: var(--box-selected-background-color);
+      color: var(--text-color);
+      border: var(--base-border);
+
+      &:hover {
+        background: var(--box-selected-active-background-color);
+      }
+
+      &.start-dev {
+        background: #166534;
+        border-color: #166534;
+        color: #dcfce7;
+
+        &:hover {
+          background: #15803d;
+        }
+      }
+
+      &.stop-dev {
+        background: #7f1d1d;
+        border-color: #7f1d1d;
+        color: #fecaca;
+
+        &:hover {
+          background: #991b1b;
+        }
+      }
+
+      &.restart-dev {
+        background: #78350f;
+        border-color: #78350f;
+        color: #fef3c7;
+
+        &:hover {
+          background: #92400e;
+        }
+      }
+    }
+
+    .file-tree-script-button {
+      background: var(--box-selected-background-color);
+      color: var(--text-color);
+      border: var(--base-border);
+
+      &:hover {
+        background: var(--box-selected-active-background-color);
+      }
+    }
+
+    .file-tree-action-button {
+      background: var(--box-selected-background-color);
+      color: var(--text-color);
+      border: var(--base-border);
+
+      &:hover {
+        background: var(--box-selected-active-background-color);
+      }
+
+      &.claude-button {
+        background: #581c87;
+        border-color: #581c87;
+        color: #f3e8ff;
+
+        &:hover {
+          background: #6b21a8;
+        }
+      }
+    }
+  }
+
+  // Custom theme - colors applied via inline styles
+  &.theme-custom {
+    .file-tree-run-button,
+    .file-tree-script-button,
+    .file-tree-action-button {
+      // Ensure custom inline styles take precedence
+      &:hover {
+        filter: brightness(1.1);
+      }
+    }
+  }
+}

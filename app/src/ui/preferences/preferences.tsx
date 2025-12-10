@@ -43,11 +43,13 @@ import { Prompts } from './prompts'
 import { Repository } from '../../models/repository'
 import { Notifications } from './notifications'
 import { Accessibility } from './accessibility'
+import { Actions } from './actions'
 import {
   ICustomIntegration,
   TargetPathArgument,
   isValidCustomIntegration,
 } from '../../lib/custom-integration'
+import { IActionButtonsSettings } from '../../models/preferences'
 
 interface IPreferencesProps {
   readonly dispatcher: Dispatcher
@@ -83,6 +85,7 @@ interface IPreferencesProps {
   readonly onEditGlobalGitConfig: () => void
   readonly underlineLinks: boolean
   readonly showDiffCheckMarks: boolean
+  readonly actionButtonsSettings: IActionButtonsSettings
 }
 
 interface IPreferencesState {
@@ -136,6 +139,8 @@ interface IPreferencesState {
   readonly underlineLinks: boolean
 
   readonly showDiffCheckMarks: boolean
+
+  readonly actionButtonsSettings: IActionButtonsSettings
 }
 
 /**
@@ -194,6 +199,7 @@ export class Preferences extends React.Component<
       isLoadingGitConfig: true,
       underlineLinks: this.props.underlineLinks,
       showDiffCheckMarks: this.props.showDiffCheckMarks,
+      actionButtonsSettings: this.props.actionButtonsSettings,
     }
   }
 
@@ -311,6 +317,10 @@ export class Preferences extends React.Component<
               <Octicon className="icon" symbol={octicons.code} />
               Editor
             </span>
+            <span id={this.getTabId(PreferencesTab.Actions)}>
+              <Octicon className="icon" symbol={octicons.play} />
+              Actions
+            </span>
             <span id={this.getTabId(PreferencesTab.Notifications)}>
               <Octicon className="icon" symbol={octicons.bell} />
               Notifications
@@ -353,6 +363,9 @@ export class Preferences extends React.Component<
         break
       case PreferencesTab.Editor:
         suffix = 'editor'
+        break
+      case PreferencesTab.Actions:
+        suffix = 'actions'
         break
       case PreferencesTab.Notifications:
         suffix = 'notifications'
@@ -477,6 +490,14 @@ export class Preferences extends React.Component<
           <Editor
             editorSettings={this.props.editorSettings}
             onEditorSettingsChanged={this.onEditorSettingsChanged}
+          />
+        )
+        break
+      case PreferencesTab.Actions:
+        View = (
+          <Actions
+            actionButtonsSettings={this.state.actionButtonsSettings}
+            onActionButtonsSettingsChanged={this.onActionButtonsSettingsChanged}
           />
         )
         break
@@ -718,6 +739,12 @@ export class Preferences extends React.Component<
     this.props.dispatcher.setEditorSettings(settings)
   }
 
+  private onActionButtonsSettingsChanged = (
+    actionButtonsSettings: IActionButtonsSettings
+  ) => {
+    this.setState({ actionButtonsSettings })
+  }
+
   private renderFooter() {
     const hasDisabledError = this.state.disallowedCharactersMessage != null
 
@@ -863,6 +890,8 @@ export class Preferences extends React.Component<
     dispatcher.setUnderlineLinksSetting(this.state.underlineLinks)
 
     dispatcher.setDiffCheckMarksSetting(this.state.showDiffCheckMarks)
+
+    dispatcher.setActionButtonsSettings(this.state.actionButtonsSettings)
 
     this.props.onDismissed()
   }
