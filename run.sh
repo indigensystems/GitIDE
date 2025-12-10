@@ -14,7 +14,11 @@ fi
 # Install dependencies if node_modules doesn't exist
 if [ ! -d "app/node_modules" ]; then
     echo "Installing dependencies with $PKG_MANAGER..."
-    $PKG_MANAGER install
+    if [ "$PKG_MANAGER" = "npm" ]; then
+        $PKG_MANAGER install --legacy-peer-deps
+    else
+        $PKG_MANAGER install
+    fi
 fi
 
 # Check if node-pty needs to be rebuilt for Electron
