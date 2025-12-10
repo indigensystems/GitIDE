@@ -166,6 +166,8 @@ const enum Tab {
 const terminalsByRepo = new Map<number, string>()
 // Track which repos have terminal visible
 const terminalVisibleByRepo = new Map<number, boolean>()
+// Track if terminal should be visible on next repo (for carrying over visibility on switch)
+let carryOverTerminalVisible: boolean | null = null
 
 export class RepositoryView extends React.Component<
   IRepositoryViewProps,
@@ -195,7 +197,15 @@ export class RepositoryView extends React.Component<
     // Restore terminal state for this repository
     const repoId = props.repository.id
     const mainTerminalId = terminalsByRepo.get(repoId) || null
-    const showTerminal = terminalVisibleByRepo.get(repoId) || false
+
+    // Use carry-over visibility if set (from switching repos), otherwise use stored value
+    let showTerminal: boolean
+    if (carryOverTerminalVisible !== null) {
+      showTerminal = carryOverTerminalVisible
+      carryOverTerminalVisible = null // Clear after using
+    } else {
+      showTerminal = terminalVisibleByRepo.get(repoId) || false
+    }
 
     this.state = {
       changesListScrollTop: 0,
@@ -1352,6 +1362,11 @@ export class RepositoryView extends React.Component<
 
     // Check for pending wiki link navigation (from cross-repo link)
     this.checkPendingWikiLink()
+
+    // If terminal should be shown but doesn't exist yet, create it
+    if (this.state.showTerminal && !this.state.mainTerminalId) {
+      this.createTerminalIfNeeded()
+    }
   }
 
   private checkPendingWikiLink() {
@@ -1376,6 +1391,15 @@ export class RepositoryView extends React.Component<
 
   public componentWillUnmount() {
     window.removeEventListener('keydown', this.onGlobalKeyDown)
+
+    // Save terminal visibility to carry over to next repo
+    carryOverTerminalVisible = this.state.showTerminal
+
+    // Save terminal state for this repository
+    if (this.state.mainTerminalId) {
+      terminalsByRepo.set(this.props.repository.id, this.state.mainTerminalId)
+    }
+    terminalVisibleByRepo.set(this.props.repository.id, this.state.showTerminal)
   }
 
   public componentDidUpdate(
@@ -1413,7 +1437,10 @@ export class RepositoryView extends React.Component<
       // Load terminal state for the new repository
       const newRepoId = this.props.repository.id
       const mainTerminalId = terminalsByRepo.get(newRepoId) || null
-      const showTerminal = terminalVisibleByRepo.get(newRepoId) || false
+
+      // Carry over terminal visibility: if terminal was showing before repo switch,
+      // keep it showing in the new repo
+      const showTerminal = prevState.showTerminal
 
       // Reset the creating flag for the new repo
       this.isCreatingTerminal = false
@@ -1426,6 +1453,11 @@ export class RepositoryView extends React.Component<
       }, () => {
         // Check for pending wiki link after tabs are loaded
         this.checkPendingWikiLink()
+
+        // If terminal should be shown but doesn't exist yet, create it
+        if (showTerminal && !mainTerminalId) {
+          this.createTerminalIfNeeded()
+        }
       })
       return
     }
