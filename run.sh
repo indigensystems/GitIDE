@@ -4,6 +4,13 @@
 
 set -e
 
+# Detect package manager (prefer yarn, fall back to npm)
+if command -v yarn &> /dev/null; then
+    PKG_MANAGER="yarn"
+else
+    PKG_MANAGER="npm"
+fi
+
 # Check if node-pty needs to be rebuilt for Electron
 check_node_pty() {
     local pty_node="app/node_modules/node-pty/build/Release/pty.node"
@@ -76,8 +83,8 @@ case "$(uname -s)" in
         ;;
 esac
 
-echo "Building production app..."
-npm run build:prod
+echo "Building production app with $PKG_MANAGER..."
+$PKG_MANAGER run build:prod
 
 echo "Launching GitHub Desktop..."
 
