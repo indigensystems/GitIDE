@@ -1,19 +1,19 @@
 {
-  "name": "desktop",
-  "productName": "GitHub Desktop",
-  "bundleID": "com.github.GitHubClient",
-  "companyName": "GitHub, Inc.",
+  "name": "gitide",
+  "productName": "GitIDE",
+  "bundleID": "com.gitide.app",
+  "companyName": "GitIDE",
   "version": "3.5.4",
   "main": "./main.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/desktop/desktop.git"
+    "url": "https://github.com/gitide/gitide.git"
   },
-  "description": "Simple collaboration from your desktop",
+  "description": "Git collaboration and development from your desktop",
   "author": {
-    "name": "GitHub, Inc.",
-    "email": "opensource+desktop@github.com",
-    "url": "https://desktop.github.com/"
+    "name": "GitIDE",
+    "email": "team@gitide.com",
+    "url": "https://gitide.com/"
   },
   "license": "MIT",
   "dependencies": {
