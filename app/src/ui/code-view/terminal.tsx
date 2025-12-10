@@ -91,7 +91,18 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
 
     // Open terminal in container
     this.xterm.open(this.containerRef.current)
-    this.fitTerminal()
+
+    // Delay initial fit to allow CSS grid to settle dimensions
+    // This is crucial for terminals in grid cells that haven't been sized yet
+    requestAnimationFrame(() => {
+      this.fitTerminal()
+      // Send another fit after a short delay to catch any late layout changes
+      setTimeout(() => {
+        this.fitTerminal()
+        // Force PTY to update with correct dimensions
+        ipcRenderer.invoke('terminal-force-redraw', this.props.terminalId)
+      }, 150)
+    })
 
     // Set up IPC listeners for terminal data
     this.dataHandler = (_event, id: string, data: string) => {
@@ -166,9 +177,16 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
   }
 
   private fitTerminal() {
-    if (this.fitAddon && this.xterm) {
+    if (this.fitAddon && this.xterm && this.containerRef.current) {
       try {
-        this.fitAddon.fit()
+        // Only fit if container has valid dimensions
+        const rect = this.containerRef.current.getBoundingClientRect()
+        if (rect.width > 0 && rect.height > 0) {
+          this.fitAddon.fit()
+        } else {
+          // Retry fit after a short delay if container isn't ready
+          setTimeout(() => this.fitTerminal(), 50)
+        }
       } catch (e) {
         // Ignore fit errors when container is not visible
       }

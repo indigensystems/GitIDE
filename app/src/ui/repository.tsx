@@ -146,10 +146,8 @@ interface IRepositoryViewState {
   readonly openCodeTabs: ReadonlyArray<IOpenTab>
   /** The currently active tab in the code view */
   readonly activeCodeTab: string | null
-  /** Counter for generating unique terminal IDs */
-  readonly terminalCounter: number
-  /** Terminal ID for the main terminal tab */
-  readonly mainTerminalId: string | null
+  /** Terminal IDs for the terminal grid (up to 4) */
+  readonly terminalIds: ReadonlyArray<string>
   /** Whether to show terminal in main content area */
   readonly showTerminal: boolean
 }
@@ -162,12 +160,14 @@ const enum Tab {
   Tasks = 4,
 }
 
-// Store terminal IDs per repository (persists across repo switches)
-const terminalsByRepo = new Map<number, string>()
+// Store terminal IDs per repository (persists across repo switches) - supports up to 4 terminals
+const terminalsByRepo = new Map<number, string[]>()
 // Track which repos have terminal visible
 const terminalVisibleByRepo = new Map<number, boolean>()
 // Track if terminal should be visible on next repo (for carrying over visibility on switch)
 let carryOverTerminalVisible: boolean | null = null
+// Maximum number of terminals allowed
+const MAX_TERMINALS = 4
 
 export class RepositoryView extends React.Component<
   IRepositoryViewProps,
@@ -196,7 +196,7 @@ export class RepositoryView extends React.Component<
 
     // Restore terminal state for this repository
     const repoId = props.repository.id
-    const mainTerminalId = terminalsByRepo.get(repoId) || null
+    const terminalIds = terminalsByRepo.get(repoId) || []
 
     // Use carry-over visibility if set (from switching repos), otherwise use stored value
     let showTerminal: boolean
@@ -214,8 +214,7 @@ export class RepositoryView extends React.Component<
       selectedIssueInfo: null,
       openCodeTabs,
       activeCodeTab,
-      terminalCounter: 1,
-      mainTerminalId,
+      terminalIds,
       showTerminal,
     }
   }
@@ -340,8 +339,8 @@ export class RepositoryView extends React.Component<
     const newShowTerminal = !this.state.showTerminal
     this.setState({ showTerminal: newShowTerminal })
 
-    if (newShowTerminal && !this.state.mainTerminalId) {
-      await this.createTerminalIfNeeded()
+    if (newShowTerminal && this.state.terminalIds.length === 0) {
+      await this.createTerminal()
     }
   }
 
@@ -1275,13 +1274,15 @@ export class RepositoryView extends React.Component<
       return assertNever(selectedSection, 'Unknown repository section')
     }
 
-    // Render ALL terminals from all repos (hidden) to keep PTY connections alive
-    // Only show the current repo's terminal when showTerminal is true
-    const { showTerminal } = this.state
+    const { showTerminal, terminalIds } = this.state
     const currentRepoId = this.props.repository.id
 
-    // Get all terminal entries to render
-    const allTerminals = Array.from(terminalsByRepo.entries())
+    // Get all terminal entries from all repos to keep them alive
+    const allRepoTerminals = Array.from(terminalsByRepo.entries())
+
+    // Determine grid class based on number of terminals
+    const terminalCount = terminalIds.length
+    const gridClass = `terminal-grid terminal-grid-${terminalCount}`
 
     return (
       <>
@@ -1289,50 +1290,98 @@ export class RepositoryView extends React.Component<
         <div style={{ display: showTerminal ? 'none' : 'contents' }}>
           {mainContent}
         </div>
-        {/* Render ALL terminals to keep them alive, but only show current repo's */}
-        {allTerminals.map(([repoId, terminalId]) => {
-          const isCurrentRepo = repoId === currentRepoId
-          const shouldShow = isCurrentRepo && showTerminal
-          return (
+
+        {/* Terminal grid container */}
+        {showTerminal && (
+          <div className="terminal-grid-container">
+            {/* Add terminal button */}
+            <div className="terminal-grid-header">
+              <button
+                className="terminal-add-button"
+                onClick={this.onAddTerminal}
+                disabled={terminalCount >= MAX_TERMINALS}
+                title={terminalCount >= MAX_TERMINALS ? 'Maximum terminals reached' : 'Add terminal'}
+              >
+                +
+              </button>
+            </div>
+
+            {/* Terminal grid */}
+            <div className={gridClass}>
+              {terminalIds.map(terminalId => (
+                <div key={terminalId} className="terminal-grid-cell">
+                  {/* Close button - only show if more than 1 terminal */}
+                  {terminalCount > 1 && (
+                    <button
+                      className="terminal-close-button"
+                      onClick={() => this.onCloseTerminal(terminalId)}
+                      title="Close terminal"
+                    >
+                      ×
+                    </button>
+                  )}
+                  <Terminal
+                    terminalId={terminalId}
+                    cwd={this.props.repository.path}
+                    isActive={showTerminal}
+                    onExit={(exitCode) => this.handleMainTerminalExit(terminalId, exitCode)}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Show loading state only when terminal is requested but not yet created */}
+            {terminalIds.length === 0 && (
+              <div className="terminal-loading">
+                <span>Initializing terminal...</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Render terminals from OTHER repos (hidden) to keep PTY connections alive */}
+        {allRepoTerminals.map(([repoId, repoTerminalIds]) => {
+          if (repoId === currentRepoId) return null // Current repo is rendered above
+          return repoTerminalIds.map(terminalId => (
             <div
               key={terminalId}
-              className="main-terminal-wrapper"
-              style={{ display: shouldShow ? 'flex' : 'none' }}
+              style={{ display: 'none' }}
             >
               <Terminal
                 terminalId={terminalId}
                 cwd={this.props.repository.path}
-                isActive={shouldShow}
-                onExit={(exitCode) => this.onRepoTerminalExit(repoId, exitCode)}
+                isActive={false}
+                onExit={(exitCode) => this.handleMainTerminalExit(terminalId, exitCode)}
               />
             </div>
-          )
+          ))
         })}
-        {/* Show loading state only when terminal is requested but not yet created */}
-        {showTerminal && !terminalsByRepo.has(currentRepoId) && (
-          <div className="main-terminal-wrapper">
-            <div className="terminal-loading">
-              <span>Initializing terminal...</span>
-            </div>
-          </div>
-        )}
       </>
     )
   }
 
-  private onRepoTerminalExit = (repoId: number, exitCode: number) => {
-    // Terminal exited, clear the ID so a new one can be created
-    console.log('[Terminal] onRepoTerminalExit called for repo:', repoId, 'exitCode:', exitCode)
+  private handleMainTerminalExit = (terminalId: string, exitCode: number) => {
+    console.log('[Terminal] handleMainTerminalExit called for terminal:', terminalId, 'exitCode:', exitCode)
 
-    // Clean up the per-repo maps
-    terminalsByRepo.delete(repoId)
-    terminalVisibleByRepo.delete(repoId)
+    const repoId = this.props.repository.id
 
-    // Only update state if this is the current repo's terminal
-    if (repoId === this.props.repository.id) {
-      this.setState({ mainTerminalId: null, showTerminal: false })
-      this.isCreatingTerminal = false
+    // Remove the exited terminal from the array
+    const newTerminalIds = this.state.terminalIds.filter(id => id !== terminalId)
+
+    // Update per-repo map
+    if (newTerminalIds.length > 0) {
+      terminalsByRepo.set(repoId, newTerminalIds)
+    } else {
+      terminalsByRepo.delete(repoId)
+      terminalVisibleByRepo.delete(repoId)
     }
+
+    // Update state
+    this.setState({
+      terminalIds: newTerminalIds,
+      showTerminal: newTerminalIds.length > 0 ? this.state.showTerminal : false,
+    })
+    this.isCreatingTerminal = false
   }
 
   public render() {
@@ -1364,8 +1413,8 @@ export class RepositoryView extends React.Component<
     this.checkPendingWikiLink()
 
     // If terminal should be shown but doesn't exist yet, create it
-    if (this.state.showTerminal && !this.state.mainTerminalId) {
-      this.createTerminalIfNeeded()
+    if (this.state.showTerminal && this.state.terminalIds.length === 0) {
+      this.createTerminal()
     }
   }
 
@@ -1396,8 +1445,8 @@ export class RepositoryView extends React.Component<
     carryOverTerminalVisible = this.state.showTerminal
 
     // Save terminal state for this repository
-    if (this.state.mainTerminalId) {
-      terminalsByRepo.set(this.props.repository.id, this.state.mainTerminalId)
+    if (this.state.terminalIds.length > 0) {
+      terminalsByRepo.set(this.props.repository.id, [...this.state.terminalIds])
     }
     terminalVisibleByRepo.set(this.props.repository.id, this.state.showTerminal)
   }
@@ -1426,8 +1475,8 @@ export class RepositoryView extends React.Component<
       )
 
       // Save terminal state for the previous repository
-      if (prevState.mainTerminalId) {
-        terminalsByRepo.set(prevProps.repository.id, prevState.mainTerminalId)
+      if (prevState.terminalIds.length > 0) {
+        terminalsByRepo.set(prevProps.repository.id, [...prevState.terminalIds])
       }
       terminalVisibleByRepo.set(prevProps.repository.id, prevState.showTerminal)
 
@@ -1436,7 +1485,7 @@ export class RepositoryView extends React.Component<
 
       // Load terminal state for the new repository
       const newRepoId = this.props.repository.id
-      const mainTerminalId = terminalsByRepo.get(newRepoId) || null
+      const terminalIds = terminalsByRepo.get(newRepoId) || []
 
       // Carry over terminal visibility: if terminal was showing before repo switch,
       // keep it showing in the new repo
@@ -1448,15 +1497,15 @@ export class RepositoryView extends React.Component<
       this.setState({
         openCodeTabs,
         activeCodeTab,
-        mainTerminalId,
+        terminalIds,
         showTerminal,
       }, () => {
         // Check for pending wiki link after tabs are loaded
         this.checkPendingWikiLink()
 
         // If terminal should be shown but doesn't exist yet, create it
-        if (showTerminal && !mainTerminalId) {
-          this.createTerminalIfNeeded()
+        if (showTerminal && terminalIds.length === 0) {
+          this.createTerminal()
         }
       })
       return
@@ -1559,10 +1608,16 @@ export class RepositoryView extends React.Component<
     }
   }
 
-  private async createTerminalIfNeeded() {
+  private async createTerminal() {
+    // Check if we've reached the maximum number of terminals
+    if (this.state.terminalIds.length >= MAX_TERMINALS) {
+      console.log('[Terminal] Maximum terminals reached:', MAX_TERMINALS)
+      return
+    }
+
     // Use flag to prevent race condition with async setState
-    if (this.state.mainTerminalId || this.isCreatingTerminal) {
-      console.log('[Terminal] Terminal already exists or being created:', this.state.mainTerminalId)
+    if (this.isCreatingTerminal) {
+      console.log('[Terminal] Terminal creation already in progress')
       return
     }
 
@@ -1576,17 +1631,72 @@ export class RepositoryView extends React.Component<
         this.props.repository.path
       )
       console.log('[Terminal] Received terminal ID:', terminalId)
-      console.log('[Terminal] Setting state mainTerminalId to:', terminalId)
+
+      // Add to the array of terminal IDs
+      const newTerminalIds = [...this.state.terminalIds, terminalId]
 
       // Save to per-repo map for persistence across repo switches
-      terminalsByRepo.set(repoId, terminalId)
+      terminalsByRepo.set(repoId, newTerminalIds)
 
-      this.setState({ mainTerminalId: terminalId }, () => {
-        console.log('[Terminal] State updated, mainTerminalId is now:', this.state.mainTerminalId)
+      this.setState({ terminalIds: newTerminalIds }, async () => {
+        console.log('[Terminal] State updated, terminalIds:', this.state.terminalIds)
+        this.isCreatingTerminal = false
+
+        // After grid layout changes, force all terminals to redraw
+        // This ensures they resize to their new container dimensions
+        // Use longer delay to ensure CSS grid has fully settled
+        setTimeout(() => this.forceAllTerminalsRedraw(), 300)
       })
     } catch (error) {
       console.error('[Terminal] Failed to create terminal:', error)
       this.isCreatingTerminal = false
+    }
+  }
+
+  private onCloseTerminal = async (terminalId: string) => {
+    // Don't allow closing the last terminal
+    if (this.state.terminalIds.length <= 1) {
+      console.log('[Terminal] Cannot close the last terminal')
+      return
+    }
+
+    const repoId = this.props.repository.id
+
+    // Kill the terminal process
+    try {
+      await ipcRenderer.invoke('terminal-kill', terminalId)
+    } catch (e) {
+      console.error('[Terminal] Failed to kill terminal:', e)
+    }
+
+    // Remove from state
+    const newTerminalIds = this.state.terminalIds.filter(id => id !== terminalId)
+
+    // Update per-repo map
+    terminalsByRepo.set(repoId, newTerminalIds)
+
+    this.setState({ terminalIds: newTerminalIds }, () => {
+      // After grid layout changes, force remaining terminals to redraw
+      setTimeout(() => this.forceAllTerminalsRedraw(), 300)
+    })
+  }
+
+  private onAddTerminal = async () => {
+    await this.createTerminal()
+  }
+
+  /**
+   * Force all terminals to redraw by sending SIGWINCH.
+   * Called after grid layout changes (add/remove terminal).
+   */
+  private forceAllTerminalsRedraw = async () => {
+    console.log('[Terminal] Forcing all terminals to redraw')
+    for (const terminalId of this.state.terminalIds) {
+      try {
+        await ipcRenderer.invoke('terminal-force-redraw', terminalId)
+      } catch (e) {
+        console.error('[Terminal] Failed to force redraw for', terminalId, e)
+      }
     }
   }
 
