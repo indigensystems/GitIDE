@@ -135,6 +135,9 @@ interface IRepositoryViewProps {
   readonly editorSettings: IEditorSettings
 }
 
+/** Terminal grid layout mode */
+type TerminalLayout = 'columns' | 'rows'
+
 interface IRepositoryViewState {
   readonly changesListScrollTop: number
   readonly compareListScrollTop: number
@@ -150,6 +153,8 @@ interface IRepositoryViewState {
   readonly terminalIds: ReadonlyArray<string>
   /** Whether to show terminal in main content area */
   readonly showTerminal: boolean
+  /** Terminal grid layout mode */
+  readonly terminalLayout: TerminalLayout
 }
 
 const enum Tab {
@@ -164,6 +169,8 @@ const enum Tab {
 const terminalsByRepo = new Map<number, string[]>()
 // Track which repos have terminal visible
 const terminalVisibleByRepo = new Map<number, boolean>()
+// Track terminal layout per repo
+const terminalLayoutByRepo = new Map<number, TerminalLayout>()
 // Track if terminal should be visible on next repo (for carrying over visibility on switch)
 let carryOverTerminalVisible: boolean | null = null
 // Maximum number of terminals allowed
@@ -197,6 +204,7 @@ export class RepositoryView extends React.Component<
     // Restore terminal state for this repository
     const repoId = props.repository.id
     const terminalIds = terminalsByRepo.get(repoId) || []
+    const terminalLayout = terminalLayoutByRepo.get(repoId) || 'columns'
 
     // Use carry-over visibility if set (from switching repos), otherwise use stored value
     let showTerminal: boolean
@@ -216,6 +224,7 @@ export class RepositoryView extends React.Component<
       activeCodeTab,
       terminalIds,
       showTerminal,
+      terminalLayout,
     }
   }
 
@@ -1274,15 +1283,16 @@ export class RepositoryView extends React.Component<
       return assertNever(selectedSection, 'Unknown repository section')
     }
 
-    const { showTerminal, terminalIds } = this.state
+    const { showTerminal, terminalIds, terminalLayout } = this.state
     const currentRepoId = this.props.repository.id
 
     // Get all terminal entries from all repos to keep them alive
     const allRepoTerminals = Array.from(terminalsByRepo.entries())
 
-    // Determine grid class based on number of terminals
+    // Determine grid class based on number of terminals and layout mode
     const terminalCount = terminalIds.length
-    const gridClass = `terminal-grid terminal-grid-${terminalCount}`
+    const layoutSuffix = terminalCount === 2 ? `-${terminalLayout}` : ''
+    const gridClass = `terminal-grid terminal-grid-${terminalCount}${layoutSuffix}`
 
     return (
       <>
@@ -1294,8 +1304,18 @@ export class RepositoryView extends React.Component<
         {/* Terminal grid container */}
         {showTerminal && (
           <div className="terminal-grid-container">
-            {/* Add terminal button */}
+            {/* Terminal header with layout toggle and add button */}
             <div className="terminal-grid-header">
+              {/* Layout toggle - only show when 2 terminals */}
+              {terminalCount === 2 && (
+                <button
+                  className="terminal-layout-toggle"
+                  onClick={this.onToggleTerminalLayout}
+                  title={terminalLayout === 'columns' ? 'Switch to rows' : 'Switch to columns'}
+                >
+                  {terminalLayout === 'columns' ? '⬌' : '⬍'}
+                </button>
+              )}
               <button
                 className="terminal-add-button"
                 onClick={this.onAddTerminal}
@@ -1449,6 +1469,7 @@ export class RepositoryView extends React.Component<
       terminalsByRepo.set(this.props.repository.id, [...this.state.terminalIds])
     }
     terminalVisibleByRepo.set(this.props.repository.id, this.state.showTerminal)
+    terminalLayoutByRepo.set(this.props.repository.id, this.state.terminalLayout)
   }
 
   public componentDidUpdate(
@@ -1479,6 +1500,7 @@ export class RepositoryView extends React.Component<
         terminalsByRepo.set(prevProps.repository.id, [...prevState.terminalIds])
       }
       terminalVisibleByRepo.set(prevProps.repository.id, prevState.showTerminal)
+      terminalLayoutByRepo.set(prevProps.repository.id, prevState.terminalLayout)
 
       // Load tabs for the new repository
       const { openCodeTabs, activeCodeTab } = this.loadTabsForRepository(this.props.repository.id)
@@ -1486,6 +1508,7 @@ export class RepositoryView extends React.Component<
       // Load terminal state for the new repository
       const newRepoId = this.props.repository.id
       const terminalIds = terminalsByRepo.get(newRepoId) || []
+      const terminalLayout = terminalLayoutByRepo.get(newRepoId) || 'columns'
 
       // Carry over terminal visibility: if terminal was showing before repo switch,
       // keep it showing in the new repo
@@ -1499,6 +1522,7 @@ export class RepositoryView extends React.Component<
         activeCodeTab,
         terminalIds,
         showTerminal,
+        terminalLayout,
       }, () => {
         // Check for pending wiki link after tabs are loaded
         this.checkPendingWikiLink()
@@ -1683,6 +1707,19 @@ export class RepositoryView extends React.Component<
 
   private onAddTerminal = async () => {
     await this.createTerminal()
+  }
+
+  private onToggleTerminalLayout = () => {
+    const newLayout: TerminalLayout = this.state.terminalLayout === 'columns' ? 'rows' : 'columns'
+    const repoId = this.props.repository.id
+
+    // Save to per-repo map
+    terminalLayoutByRepo.set(repoId, newLayout)
+
+    this.setState({ terminalLayout: newLayout }, () => {
+      // Force terminals to redraw after layout change
+      setTimeout(() => this.forceAllTerminalsRedraw(), 300)
+    })
   }
 
   /**

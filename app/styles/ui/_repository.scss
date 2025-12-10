@@ -78,9 +78,30 @@
   .terminal-grid-header {
     display: flex;
     justify-content: flex-end;
+    gap: 4px;
     padding: 4px 8px;
     background: #252526;
     border-bottom: 1px solid #3c3c3c;
+  }
+
+  .terminal-layout-toggle {
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 4px;
+    background: #3c3c3c;
+    color: #cccccc;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    &:hover {
+      background: #4c4c4c;
+      color: white;
+    }
   }
 
   .terminal-add-button {
@@ -132,10 +153,17 @@
     grid-template-rows: 1fr;
   }
 
-  // 2 terminals: side by side
-  &.terminal-grid-2 {
+  // 2 terminals: side by side (columns - default)
+  &.terminal-grid-2,
+  &.terminal-grid-2-columns {
     grid-template-columns: 1fr 1fr;
     grid-template-rows: 1fr;
+  }
+
+  // 2 terminals: stacked (rows)
+  &.terminal-grid-2-rows {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr;
   }
 
   // 3 terminals: 2 on top, 1 on bottom (full width)
