@@ -37,7 +37,8 @@ import { Emoji } from '../lib/emoji'
 import { TaskListPanel } from './tasks'
 import { IssueDetailView, IIssueInfo } from './tasks/issue-detail-view'
 import { IssueListPanel } from './issues'
-import { CodeViewSidebar, CodeViewContent, IOpenTab } from './code-view'
+import { CodeViewSidebar, CodeViewContent, Terminal, IOpenTab } from './code-view'
+import * as ipcRenderer from '../lib/ipc-renderer'
 import { IAPIIssueWithMetadata } from '../lib/api'
 import { shell } from 'electron'
 import { isRepositoryWithGitHubRepository } from '../models/repository'
@@ -147,6 +148,10 @@ interface IRepositoryViewState {
   readonly activeCodeTab: string | null
   /** Counter for generating unique terminal IDs */
   readonly terminalCounter: number
+  /** Terminal ID for the main terminal tab */
+  readonly mainTerminalId: string | null
+  /** Whether to show terminal in main content area */
+  readonly showTerminal: boolean
 }
 
 const enum Tab {
@@ -174,6 +179,7 @@ export class RepositoryView extends React.Component<
 
   private focusHistoryNeeded: boolean = false
   private focusChangesNeeded: boolean = false
+  private isCreatingTerminal: boolean = false
 
   public constructor(props: IRepositoryViewProps) {
     super(props)
@@ -189,6 +195,8 @@ export class RepositoryView extends React.Component<
       openCodeTabs,
       activeCodeTab,
       terminalCounter: 1,
+      mainTerminalId: null,
+      showTerminal: false,
     }
   }
 
@@ -274,29 +282,47 @@ export class RepositoryView extends React.Component<
     }
 
     return (
-      <TabBar selectedIndex={selectedTab} onTabClicked={this.onTabClicked}>
-        <div className="with-indicator" id="code-tab">
-          <span>Code</span>
-        </div>
+      <div className="tab-bar-container">
+        <TabBar selectedIndex={selectedTab} onTabClicked={this.onTabClicked}>
+          <div className="with-indicator" id="code-tab">
+            <span>Code</span>
+          </div>
 
-        <span className="with-indicator" id="changes-tab">
-          <span>Changes</span>
-          {this.renderChangesBadge()}
-        </span>
+          <span className="with-indicator" id="changes-tab">
+            <span>Changes</span>
+            {this.renderChangesBadge()}
+          </span>
 
-        <div className="with-indicator" id="history-tab">
-          <span>History</span>
-        </div>
+          <div className="with-indicator" id="history-tab">
+            <span>History</span>
+          </div>
 
-        <div className="with-indicator" id="issues-tab">
-          <span>Issues</span>
-        </div>
+          <div className="with-indicator" id="issues-tab">
+            <span>Issues</span>
+          </div>
 
-        <div className="with-indicator" id="tasks-tab">
-          <span>Tasks</span>
-        </div>
-      </TabBar>
+          <div className="with-indicator" id="tasks-tab">
+            <span>Tasks</span>
+          </div>
+        </TabBar>
+        <button
+          className={`terminal-toggle ${this.state.showTerminal ? 'active' : ''}`}
+          onClick={this.onTerminalToggle}
+          title="Toggle Terminal"
+        >
+          Terminal
+        </button>
+      </div>
     )
+  }
+
+  private onTerminalToggle = async () => {
+    const newShowTerminal = !this.state.showTerminal
+    this.setState({ showTerminal: newShowTerminal })
+
+    if (newShowTerminal && !this.state.mainTerminalId) {
+      await this.createTerminalIfNeeded()
+    }
   }
 
   private renderChangesSidebar(): JSX.Element {
@@ -1211,6 +1237,11 @@ export class RepositoryView extends React.Component<
   }
 
   private renderContent(): JSX.Element | null {
+    // Show terminal if toggled on
+    if (this.state.showTerminal) {
+      return this.renderContentForTerminal()
+    }
+
     const selectedSection = this.props.state.selectedSection
     if (selectedSection === RepositorySectionTab.Code) {
       return this.renderContentForCode()
@@ -1225,6 +1256,41 @@ export class RepositoryView extends React.Component<
     } else {
       return assertNever(selectedSection, 'Unknown repository section')
     }
+  }
+
+  private renderContentForTerminal(): JSX.Element {
+    const { mainTerminalId } = this.state
+    console.log('[Terminal] renderContentForTerminal, mainTerminalId:', mainTerminalId)
+
+    if (!mainTerminalId) {
+      return (
+        <div className="main-terminal-wrapper">
+          <div className="terminal-loading">
+            <span>Initializing terminal...</span>
+          </div>
+        </div>
+      )
+    }
+
+    console.log('[Terminal] Rendering Terminal component with id:', mainTerminalId)
+    return (
+      <div className="main-terminal-wrapper">
+        <Terminal
+          terminalId={mainTerminalId}
+          cwd={this.props.repository.path}
+          isActive={true}
+          onExit={this.onMainTerminalExit}
+        />
+      </div>
+    )
+  }
+
+  private onMainTerminalExit = (exitCode: number) => {
+    // Terminal exited, clear the ID so a new one can be created
+    console.log('[Terminal] onMainTerminalExit called with exitCode:', exitCode)
+    console.trace('[Terminal] Exit call stack')
+    this.setState({ mainTerminalId: null, showTerminal: false })
+    this.isCreatingTerminal = false
   }
 
   public render() {
@@ -1356,6 +1422,11 @@ export class RepositoryView extends React.Component<
   }
 
   private onTabClicked = (tab: Tab) => {
+    // Hide terminal when switching tabs
+    if (this.state.showTerminal) {
+      this.setState({ showTerminal: false })
+    }
+
     let section: RepositorySectionTab
     if (tab === Tab.Code) {
       section = RepositorySectionTab.Code
@@ -1397,6 +1468,32 @@ export class RepositoryView extends React.Component<
       isRepositoryWithGitHubRepository(this.props.repository)
     ) {
       this.props.dispatcher.refreshRepositoryIssues(this.props.repository)
+    }
+  }
+
+  private async createTerminalIfNeeded() {
+    // Use flag to prevent race condition with async setState
+    if (this.state.mainTerminalId || this.isCreatingTerminal) {
+      console.log('[Terminal] Terminal already exists or being created:', this.state.mainTerminalId)
+      return
+    }
+
+    this.isCreatingTerminal = true
+    console.log('[Terminal] Creating terminal for path:', this.props.repository.path)
+
+    try {
+      const terminalId = await ipcRenderer.invoke(
+        'terminal-create',
+        this.props.repository.path
+      )
+      console.log('[Terminal] Received terminal ID:', terminalId)
+      console.log('[Terminal] Setting state mainTerminalId to:', terminalId)
+      this.setState({ mainTerminalId: terminalId }, () => {
+        console.log('[Terminal] State updated, mainTerminalId is now:', this.state.mainTerminalId)
+      })
+    } catch (error) {
+      console.error('[Terminal] Failed to create terminal:', error)
+      this.isCreatingTerminal = false
     }
   }
 

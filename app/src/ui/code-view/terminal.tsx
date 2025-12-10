@@ -49,7 +49,9 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
   }
 
   private async initializeTerminal() {
+    console.log('[Terminal] initializeTerminal called, terminalId:', this.props.terminalId)
     if (!this.containerRef.current) {
+      console.log('[Terminal] No container ref!')
       return
     }
 
@@ -93,7 +95,9 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
 
     // Set up IPC listeners for terminal data
     this.dataHandler = (_event, id: string, data: string) => {
+      console.log('[Terminal] Received data for id:', id, 'my id:', this.props.terminalId, 'data length:', data.length)
       if (id === this.props.terminalId && this.xterm) {
+        console.log('[Terminal] Writing data to xterm')
         this.xterm.write(data)
       }
     }
@@ -107,8 +111,7 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
     ipcRenderer.on('terminal-data', this.dataHandler)
     ipcRenderer.on('terminal-exit', this.exitHandler)
 
-    // Send user input to main process
-    // The script command creates a real PTY that handles echo
+    // Send user input to main process - PTY handles echo
     this.xterm.onData(data => {
       ipcRenderer.invoke('terminal-write', this.props.terminalId, data)
     })
@@ -125,6 +128,7 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
     this.resizeObserver.observe(this.containerRef.current)
 
     this.setState({ isReady: true })
+    console.log('[Terminal] Terminal initialized and ready, terminalId:', this.props.terminalId)
 
     // Focus if active
     if (this.props.isActive) {
@@ -143,6 +147,7 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
   }
 
   private cleanup() {
+    console.log('[Terminal] cleanup called for terminalId:', this.props.terminalId)
     if (this.dataHandler) {
       ipcRenderer.removeListener('terminal-data', this.dataHandler)
     }
@@ -157,6 +162,7 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
     }
 
     // Kill the terminal process
+    console.log('[Terminal] Calling terminal-kill for:', this.props.terminalId)
     ipcRenderer.invoke('terminal-kill', this.props.terminalId)
   }
 

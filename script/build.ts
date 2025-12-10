@@ -270,6 +270,40 @@ function moveAnalysisFiles() {
   }
 }
 
+function rebuildNodePtyForElectron(outRoot: string) {
+  const nodePtyDir = path.join(outRoot, 'node_modules', 'node-pty')
+  if (!existsSync(nodePtyDir)) {
+    console.log('    node-pty not found, skipping rebuild')
+    return
+  }
+
+  // Get Electron version from package.json
+  const rootPkg = require(path.join(projectRoot, 'package.json'))
+  const electronVersion = rootPkg.devDependencies.electron
+
+  // Remove existing build
+  const buildDir = path.join(nodePtyDir, 'build')
+  rmSync(buildDir, { recursive: true, force: true })
+
+  // Build with C++20 support for Electron
+  const arch = process.env.TARGET_ARCH || os.arch()
+  const env = {
+    ...process.env,
+    CXX: 'clang++ -std=c++20',
+    CC: 'clang',
+  }
+
+  const cmd = `npx node-gyp rebuild --target=${electronVersion} --arch=${arch} --runtime=electron --dist-url=https://electronjs.org/headers`
+
+  try {
+    cp.execSync(cmd, { cwd: nodePtyDir, env, stdio: 'inherit' })
+    console.log('    node-pty rebuilt successfully for Electron')
+  } catch (err) {
+    console.error('    Failed to rebuild node-pty:', err)
+    throw err
+  }
+}
+
 function copyDependencies() {
   const pkg: Package = require(path.join(projectRoot, 'app', 'package.json'))
 
@@ -295,6 +329,10 @@ function copyDependencies() {
 
   console.log('  Installing dependencies via yarn…')
   cp.execSync('yarn install', { cwd: outRoot, env: process.env })
+
+  // Rebuild node-pty for Electron (requires C++20 for Electron 38+)
+  console.log('  Rebuilding node-pty for Electron…')
+  rebuildNodePtyForElectron(outRoot)
 
   console.log('  Copying desktop-askpass-trampoline…')
   const trampolineSource = path.resolve(

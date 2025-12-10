@@ -34,3 +34,33 @@
     }
   }
 }
+
+// Main terminal view (when terminal toggle is active)
+.main-terminal-wrapper {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+  background: #1e1e1e;
+
+  .terminal-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-secondary-color);
+  }
+
+  .terminal-container {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: var(--spacing-half);
+    box-sizing: border-box;
+
+    .xterm {
+      height: 100%;
+    }
+  }
+}

@@ -21,3 +21,4 @@ junit*.xml
 tslint-rules/
 buildplan.md
 CLAUDE.md
+app/node_modules/.pty-electron-version

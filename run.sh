@@ -4,6 +4,48 @@
 
 set -e
 
+# Check if node-pty needs to be rebuilt for Electron
+check_node_pty() {
+    local pty_node="app/node_modules/node-pty/build/Release/pty.node"
+    local marker_file="app/node_modules/.pty-electron-version"
+    local electron_version=$(node -p "require('./package.json').devDependencies.electron")
+
+    # Check if pty.node exists
+    if [ ! -f "$pty_node" ]; then
+        echo "node-pty not built, rebuilding for Electron $electron_version..."
+        rebuild_node_pty "$electron_version"
+        echo "$electron_version" > "$marker_file"
+        return
+    fi
+
+    # Check if built for current Electron version
+    if [ -f "$marker_file" ]; then
+        local built_version=$(cat "$marker_file")
+        if [ "$built_version" = "$electron_version" ]; then
+            return  # Already built for this version
+        fi
+    fi
+
+    echo "Rebuilding node-pty for Electron $electron_version..."
+    rebuild_node_pty "$electron_version"
+    echo "$electron_version" > "$marker_file"
+}
+
+# Rebuild node-pty with C++20 support for Electron
+rebuild_node_pty() {
+    local electron_version="$1"
+    cd app/node_modules/node-pty
+    rm -rf build
+    HOME="$HOME" CXX="clang++ -std=c++20" CC="clang" npx node-gyp rebuild \
+        --target="$electron_version" \
+        --arch="$(uname -m)" \
+        --runtime=electron \
+        --dist-url=https://electronjs.org/headers
+    cd ../../..
+}
+
+check_node_pty
+
 # Kill any running instances of the app
 echo "Checking for running instances..."
 case "$(uname -s)" in
