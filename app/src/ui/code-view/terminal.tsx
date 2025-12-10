@@ -61,6 +61,7 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
       fontFamily: 'var(--font-family-monospace)',
       fontSize: 13,
       lineHeight: 1.2,
+      scrollback: 10000, // Large scrollback buffer for long-running tasks like Claude
       theme: {
         background: '#1e1e1e',
         foreground: '#d4d4d4',

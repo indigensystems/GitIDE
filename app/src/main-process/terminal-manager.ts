@@ -5,7 +5,8 @@ import * as os from 'os'
 import * as pty from 'node-pty'
 
 // Buffer size for terminal output (in characters) - enough for scrollback
-const OUTPUT_BUFFER_SIZE = 100000
+// 10000 lines * ~150 chars avg = ~1.5MB max buffer per terminal
+const OUTPUT_BUFFER_SIZE = 1500000
 
 interface ITerminalInstance {
   id: string
