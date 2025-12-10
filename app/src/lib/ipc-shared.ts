@@ -143,4 +143,6 @@ export type RequestResponseChannels = {
   'terminal-write': (id: string, data: string) => Promise<void>
   'terminal-resize': (id: string, cols: number, rows: number) => Promise<void>
   'terminal-kill': (id: string) => Promise<void>
+  'terminal-get-buffer': (id: string) => Promise<string>
+  'terminal-exists': (id: string) => Promise<boolean>
 }

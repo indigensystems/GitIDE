@@ -130,9 +130,26 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
     this.setState({ isReady: true })
     console.log('[Terminal] Terminal initialized and ready, terminalId:', this.props.terminalId)
 
+    // Replay buffered output from main process (for reconnecting after repo switch)
+    this.replayBuffer()
+
     // Focus if active
     if (this.props.isActive) {
       this.xterm.focus()
+    }
+  }
+
+  private async replayBuffer() {
+    if (!this.xterm) return
+
+    try {
+      const buffer = await ipcRenderer.invoke('terminal-get-buffer', this.props.terminalId)
+      if (buffer && buffer.length > 0) {
+        console.log('[Terminal] Replaying buffer, length:', buffer.length)
+        this.xterm.write(buffer)
+      }
+    } catch (e) {
+      console.error('[Terminal] Failed to replay buffer:', e)
     }
   }
 
@@ -161,9 +178,9 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
       this.xterm.dispose()
     }
 
-    // Kill the terminal process
-    console.log('[Terminal] Calling terminal-kill for:', this.props.terminalId)
-    ipcRenderer.invoke('terminal-kill', this.props.terminalId)
+    // Note: We do NOT kill the terminal process here.
+    // The PTY should persist so we can reconnect when switching back.
+    // Terminal is only killed when explicitly closed or app exits.
   }
 
   public render() {

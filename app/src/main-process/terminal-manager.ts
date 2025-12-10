@@ -4,11 +4,15 @@ import * as ipcWebContents from './ipc-webcontents'
 import * as os from 'os'
 import * as pty from 'node-pty'
 
+// Buffer size for terminal output (in characters) - enough for scrollback
+const OUTPUT_BUFFER_SIZE = 100000
+
 interface ITerminalInstance {
   id: string
   window: BrowserWindow
   cwd: string
   ptyProcess: pty.IPty | null
+  outputBuffer: string // Stores recent output for replay on reconnect
 }
 
 const terminals = new Map<string, ITerminalInstance>()
@@ -42,11 +46,19 @@ export function createTerminal(window: BrowserWindow, cwd: string): string {
     window,
     cwd,
     ptyProcess,
+    outputBuffer: '',
   }
 
   terminals.set(id, instance)
 
   ptyProcess.onData((data: string) => {
+    // Buffer the output for replay on reconnect
+    instance.outputBuffer += data
+    // Trim buffer if it gets too large
+    if (instance.outputBuffer.length > OUTPUT_BUFFER_SIZE) {
+      instance.outputBuffer = instance.outputBuffer.slice(-OUTPUT_BUFFER_SIZE)
+    }
+
     if (!window.isDestroyed()) {
       ipcWebContents.send(window.webContents, 'terminal-data', id, data)
     }
@@ -110,4 +122,19 @@ export function killAllTerminalsForWindow(window: BrowserWindow): void {
       terminals.delete(id)
     }
   }
+}
+
+/**
+ * Get the buffered output for a terminal (for replay on reconnect)
+ */
+export function getTerminalBuffer(id: string): string {
+  const instance = terminals.get(id)
+  return instance?.outputBuffer || ''
+}
+
+/**
+ * Check if a terminal exists
+ */
+export function terminalExists(id: string): boolean {
+  return terminals.has(id)
 }

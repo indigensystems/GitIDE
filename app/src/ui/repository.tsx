@@ -162,6 +162,11 @@ const enum Tab {
   Tasks = 4,
 }
 
+// Store terminal IDs per repository (persists across repo switches)
+const terminalsByRepo = new Map<number, string>()
+// Track which repos have terminal visible
+const terminalVisibleByRepo = new Map<number, boolean>()
+
 export class RepositoryView extends React.Component<
   IRepositoryViewProps,
   IRepositoryViewState
@@ -187,6 +192,11 @@ export class RepositoryView extends React.Component<
     // Restore code view tabs from localStorage for this repository
     const { openCodeTabs, activeCodeTab } = this.loadTabsForRepository(props.repository.id)
 
+    // Restore terminal state for this repository
+    const repoId = props.repository.id
+    const mainTerminalId = terminalsByRepo.get(repoId) || null
+    const showTerminal = terminalVisibleByRepo.get(repoId) || false
+
     this.state = {
       changesListScrollTop: 0,
       compareListScrollTop: 0,
@@ -195,8 +205,8 @@ export class RepositoryView extends React.Component<
       openCodeTabs,
       activeCodeTab,
       terminalCounter: 1,
-      mainTerminalId: null,
-      showTerminal: false,
+      mainTerminalId,
+      showTerminal,
     }
   }
 
@@ -529,14 +539,15 @@ export class RepositoryView extends React.Component<
     // Check if file is already open
     const existingTab = openCodeTabs.find(t => t.filePath === filePath)
     if (existingTab) {
-      // Just switch to the existing tab
-      this.setState({ activeCodeTab: filePath })
+      // Just switch to the existing tab, hide terminal to show the file
+      this.setState({ activeCodeTab: filePath, showTerminal: false })
     } else {
-      // Add new tab and make it active
+      // Add new tab and make it active, hide terminal to show the file
       const newTab: IOpenTab = { filePath, hasUnsavedChanges: false }
       this.setState({
         openCodeTabs: [...openCodeTabs, newTab],
         activeCodeTab: filePath,
+        showTerminal: false,
       })
     }
   }
@@ -721,8 +732,8 @@ export class RepositoryView extends React.Component<
       projectTitle: null,
     }
 
-    // Show the issue detail view (no selectedTask since not from Tasks tab)
-    this.setState({ selectedTask: null, selectedIssueInfo: issueInfo })
+    // Show the issue detail view (no selectedTask since not from Tasks tab), hide terminal
+    this.setState({ selectedTask: null, selectedIssueInfo: issueInfo, showTerminal: false })
   }
 
   private onIssueOpenInBrowser = (issue: IAPIIssueWithMetadata) => {
@@ -769,8 +780,8 @@ export class RepositoryView extends React.Component<
       projectStatus: task.projectStatus,
       projectTitle: task.projectTitle,
     }
-    // Show the task detail view
-    this.setState({ selectedTask: task, selectedIssueInfo: issueInfo })
+    // Show the task detail view, hide terminal
+    this.setState({ selectedTask: task, selectedIssueInfo: issueInfo, showTerminal: false })
   }
 
   private onTaskPin = (task: ITask) => {
@@ -1237,60 +1248,81 @@ export class RepositoryView extends React.Component<
   }
 
   private renderContent(): JSX.Element | null {
-    // Show terminal if toggled on
-    if (this.state.showTerminal) {
-      return this.renderContentForTerminal()
-    }
-
     const selectedSection = this.props.state.selectedSection
+
+    let mainContent: JSX.Element | null = null
     if (selectedSection === RepositorySectionTab.Code) {
-      return this.renderContentForCode()
+      mainContent = this.renderContentForCode()
     } else if (selectedSection === RepositorySectionTab.Changes) {
-      return this.renderContentForChanges()
+      mainContent = this.renderContentForChanges()
     } else if (selectedSection === RepositorySectionTab.History) {
-      return this.renderContentForHistory()
+      mainContent = this.renderContentForHistory()
     } else if (selectedSection === RepositorySectionTab.Tasks) {
-      return this.renderContentForTasks()
+      mainContent = this.renderContentForTasks()
     } else if (selectedSection === RepositorySectionTab.Issues) {
-      return this.renderContentForIssues()
+      mainContent = this.renderContentForIssues()
     } else {
       return assertNever(selectedSection, 'Unknown repository section')
     }
-  }
 
-  private renderContentForTerminal(): JSX.Element {
-    const { mainTerminalId } = this.state
-    console.log('[Terminal] renderContentForTerminal, mainTerminalId:', mainTerminalId)
+    // Render ALL terminals from all repos (hidden) to keep PTY connections alive
+    // Only show the current repo's terminal when showTerminal is true
+    const { showTerminal } = this.state
+    const currentRepoId = this.props.repository.id
 
-    if (!mainTerminalId) {
-      return (
-        <div className="main-terminal-wrapper">
-          <div className="terminal-loading">
-            <span>Initializing terminal...</span>
-          </div>
-        </div>
-      )
-    }
+    // Get all terminal entries to render
+    const allTerminals = Array.from(terminalsByRepo.entries())
 
-    console.log('[Terminal] Rendering Terminal component with id:', mainTerminalId)
     return (
-      <div className="main-terminal-wrapper">
-        <Terminal
-          terminalId={mainTerminalId}
-          cwd={this.props.repository.path}
-          isActive={true}
-          onExit={this.onMainTerminalExit}
-        />
-      </div>
+      <>
+        {/* Regular content - hidden when terminal is shown */}
+        <div style={{ display: showTerminal ? 'none' : 'contents' }}>
+          {mainContent}
+        </div>
+        {/* Render ALL terminals to keep them alive, but only show current repo's */}
+        {allTerminals.map(([repoId, terminalId]) => {
+          const isCurrentRepo = repoId === currentRepoId
+          const shouldShow = isCurrentRepo && showTerminal
+          return (
+            <div
+              key={terminalId}
+              className="main-terminal-wrapper"
+              style={{ display: shouldShow ? 'flex' : 'none' }}
+            >
+              <Terminal
+                terminalId={terminalId}
+                cwd={this.props.repository.path}
+                isActive={shouldShow}
+                onExit={(exitCode) => this.onRepoTerminalExit(repoId, exitCode)}
+              />
+            </div>
+          )
+        })}
+        {/* Show loading state only when terminal is requested but not yet created */}
+        {showTerminal && !terminalsByRepo.has(currentRepoId) && (
+          <div className="main-terminal-wrapper">
+            <div className="terminal-loading">
+              <span>Initializing terminal...</span>
+            </div>
+          </div>
+        )}
+      </>
     )
   }
 
-  private onMainTerminalExit = (exitCode: number) => {
+  private onRepoTerminalExit = (repoId: number, exitCode: number) => {
     // Terminal exited, clear the ID so a new one can be created
-    console.log('[Terminal] onMainTerminalExit called with exitCode:', exitCode)
-    console.trace('[Terminal] Exit call stack')
-    this.setState({ mainTerminalId: null, showTerminal: false })
-    this.isCreatingTerminal = false
+    console.log('[Terminal] onRepoTerminalExit called for repo:', repoId, 'exitCode:', exitCode)
+
+    // Clean up the per-repo maps
+    terminalsByRepo.delete(repoId)
+    terminalVisibleByRepo.delete(repoId)
+
+    // Only update state if this is the current repo's terminal
+    if (repoId === this.props.repository.id) {
+      this.setState({ mainTerminalId: null, showTerminal: false })
+      this.isCreatingTerminal = false
+    }
   }
 
   public render() {
@@ -1360,7 +1392,7 @@ export class RepositoryView extends React.Component<
       this.compareSidebarRef.current?.focusHistory()
     }
 
-    // Handle repository change - save current tabs and load new repo's tabs
+    // Handle repository change - save current state and load new repo's state
     if (prevProps.repository.id !== this.props.repository.id) {
       // Save tabs for the previous repository
       this.saveTabsForRepository(
@@ -1369,9 +1401,29 @@ export class RepositoryView extends React.Component<
         prevState.activeCodeTab
       )
 
+      // Save terminal state for the previous repository
+      if (prevState.mainTerminalId) {
+        terminalsByRepo.set(prevProps.repository.id, prevState.mainTerminalId)
+      }
+      terminalVisibleByRepo.set(prevProps.repository.id, prevState.showTerminal)
+
       // Load tabs for the new repository
       const { openCodeTabs, activeCodeTab } = this.loadTabsForRepository(this.props.repository.id)
-      this.setState({ openCodeTabs, activeCodeTab }, () => {
+
+      // Load terminal state for the new repository
+      const newRepoId = this.props.repository.id
+      const mainTerminalId = terminalsByRepo.get(newRepoId) || null
+      const showTerminal = terminalVisibleByRepo.get(newRepoId) || false
+
+      // Reset the creating flag for the new repo
+      this.isCreatingTerminal = false
+
+      this.setState({
+        openCodeTabs,
+        activeCodeTab,
+        mainTerminalId,
+        showTerminal,
+      }, () => {
         // Check for pending wiki link after tabs are loaded
         this.checkPendingWikiLink()
       })
@@ -1422,11 +1474,6 @@ export class RepositoryView extends React.Component<
   }
 
   private onTabClicked = (tab: Tab) => {
-    // Hide terminal when switching tabs
-    if (this.state.showTerminal) {
-      this.setState({ showTerminal: false })
-    }
-
     let section: RepositorySectionTab
     if (tab === Tab.Code) {
       section = RepositorySectionTab.Code
@@ -1438,6 +1485,15 @@ export class RepositoryView extends React.Component<
       section = RepositorySectionTab.Issues
     } else {
       section = RepositorySectionTab.Changes
+    }
+
+    // Only hide terminal and change main content when clicking Changes or History
+    // Other tabs (Code, Issues, Tasks) only change the sidebar
+    const isMainContentTab = section === RepositorySectionTab.Changes ||
+                             section === RepositorySectionTab.History
+
+    if (isMainContentTab && this.state.showTerminal) {
+      this.setState({ showTerminal: false })
     }
 
     this.props.dispatcher.changeRepositorySection(
@@ -1479,6 +1535,7 @@ export class RepositoryView extends React.Component<
     }
 
     this.isCreatingTerminal = true
+    const repoId = this.props.repository.id
     console.log('[Terminal] Creating terminal for path:', this.props.repository.path)
 
     try {
@@ -1488,6 +1545,10 @@ export class RepositoryView extends React.Component<
       )
       console.log('[Terminal] Received terminal ID:', terminalId)
       console.log('[Terminal] Setting state mainTerminalId to:', terminalId)
+
+      // Save to per-repo map for persistence across repo switches
+      terminalsByRepo.set(repoId, terminalId)
+
       this.setState({ mainTerminalId: terminalId }, () => {
         console.log('[Terminal] State updated, mainTerminalId is now:', this.state.mainTerminalId)
       })

@@ -57,6 +57,8 @@ import {
   resizeTerminal,
   killTerminal,
   killAllTerminalsForWindow,
+  getTerminalBuffer,
+  terminalExists,
 } from './terminal-manager'
 
 app.setAppLogsPath()
@@ -751,6 +753,14 @@ app.on('ready', () => {
 
   ipcMain.handle('terminal-kill', async (_, id: string) => {
     killTerminal(id)
+  })
+
+  ipcMain.handle('terminal-get-buffer', async (_, id: string) => {
+    return getTerminalBuffer(id)
+  })
+
+  ipcMain.handle('terminal-exists', async (_, id: string) => {
+    return terminalExists(id)
   })
 })
 
