@@ -48,7 +48,7 @@ import {
 import { IChangesetData } from './git'
 import { Popup } from '../models/popup'
 import { RepoRulesInfo } from '../models/repo-rules'
-import { IEditorSettings } from '../models/preferences'
+import { IEditorSettings, IActionButtonsSettings } from '../models/preferences'
 import { IAPIRepoRuleset, IAPIOrganization, IAPIProjectV2, IAPIRepository } from './api'
 import { ICustomIntegration } from './custom-integration'
 import { Emoji } from './emoji'
@@ -303,6 +303,9 @@ export interface IAppState {
 
   /** Code editor settings */
   readonly editorSettings: IEditorSettings
+
+  /** Action buttons settings for file tree */
+  readonly actionButtonsSettings: IActionButtonsSettings
 
   /**
    * A map keyed on a user account (GitHub.com or GitHub Enterprise)

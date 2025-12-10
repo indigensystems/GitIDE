@@ -87,7 +87,16 @@ import {
   getPersistedEditorSettings,
   setPersistedEditorSettings,
 } from '../../ui/lib/editor-settings'
-import { IEditorSettings, defaultEditorSettings } from '../../models/preferences'
+import {
+  getPersistedActionButtonsSettings,
+  setPersistedActionButtonsSettings,
+} from '../../ui/lib/action-buttons-settings'
+import {
+  IEditorSettings,
+  defaultEditorSettings,
+  IActionButtonsSettings,
+  defaultActionButtonsSettings,
+} from '../../models/preferences'
 import { findCurrentIterationTitle } from '../../ui/project-view/filter-utils'
 import {
   getAppMenu,
@@ -598,6 +607,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private currentTheme: ApplicableTheme = ApplicationTheme.Light
   private selectedTabSize = tabSizeDefault
   private editorSettings: IEditorSettings = defaultEditorSettings
+  private actionButtonsSettings: IActionButtonsSettings = defaultActionButtonsSettings
 
   private useWindowsOpenSSH: boolean = false
 
@@ -1152,6 +1162,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       currentTheme: this.currentTheme,
       selectedTabSize: this.selectedTabSize,
       editorSettings: this.editorSettings,
+      actionButtonsSettings: this.actionButtonsSettings,
       apiRepositories: this.apiRepositoriesStore.getState(),
       useWindowsOpenSSH: this.useWindowsOpenSSH,
       showCommitLengthWarning: this.showCommitLengthWarning,
@@ -2402,6 +2413,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     this.selectedTabSize = getNumber(tabSizeKey, tabSizeDefault)
     this.editorSettings = getPersistedEditorSettings()
+    this.actionButtonsSettings = getPersistedActionButtonsSettings()
 
     themeChangeMonitor.onThemeChanged(theme => {
       this.currentTheme = theme
@@ -8482,6 +8494,12 @@ export class AppStore extends TypedBaseStore<IAppState> {
       setBoolean(showDiffCheckMarksKey, showDiffCheckMarks)
       this.emitUpdate()
     }
+  }
+
+  public _updateActionButtonsSettings(settings: IActionButtonsSettings) {
+    this.actionButtonsSettings = settings
+    setPersistedActionButtonsSettings(settings)
+    this.emitUpdate()
   }
 
   public _updateFileListFilter(
