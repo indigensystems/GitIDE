@@ -59,6 +59,7 @@ import {
   killAllTerminalsForWindow,
   getTerminalBuffer,
   terminalExists,
+  forceRedraw,
 } from './terminal-manager'
 
 app.setAppLogsPath()
@@ -761,6 +762,10 @@ app.on('ready', () => {
 
   ipcMain.handle('terminal-exists', async (_, id: string) => {
     return terminalExists(id)
+  })
+
+  ipcMain.handle('terminal-force-redraw', async (_, id: string) => {
+    forceRedraw(id)
   })
 })
 

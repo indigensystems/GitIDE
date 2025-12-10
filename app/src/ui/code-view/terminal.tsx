@@ -147,6 +147,18 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
       if (buffer && buffer.length > 0) {
         console.log('[Terminal] Replaying buffer, length:', buffer.length)
         this.xterm.write(buffer)
+
+        // After replaying buffer, force a redraw by sending SIGWINCH.
+        // This helps TUI apps (like Claude) redraw correctly.
+        // Small delay to ensure xterm has processed the buffer first.
+        setTimeout(async () => {
+          try {
+            await ipcRenderer.invoke('terminal-force-redraw', this.props.terminalId)
+            console.log('[Terminal] Sent force redraw signal')
+          } catch (e) {
+            console.error('[Terminal] Failed to send force redraw:', e)
+          }
+        }, 100)
       }
     } catch (e) {
       console.error('[Terminal] Failed to replay buffer:', e)

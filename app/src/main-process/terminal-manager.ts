@@ -138,3 +138,23 @@ export function getTerminalBuffer(id: string): string {
 export function terminalExists(id: string): boolean {
   return terminals.has(id)
 }
+
+/**
+ * Force a terminal to redraw by triggering a resize.
+ * This sends SIGWINCH to the PTY process, causing TUI apps to redraw.
+ */
+export function forceRedraw(id: string): void {
+  const instance = terminals.get(id)
+  if (!instance || !instance.ptyProcess) {
+    return
+  }
+
+  // Get current size and trigger a resize to the same dimensions.
+  // node-pty's resize() will send SIGWINCH to the process.
+  const cols = instance.ptyProcess.cols
+  const rows = instance.ptyProcess.rows
+
+  // Resize to slightly different size then back to force SIGWINCH
+  instance.ptyProcess.resize(cols, rows + 1)
+  instance.ptyProcess.resize(cols, rows)
+}

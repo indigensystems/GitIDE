@@ -145,4 +145,5 @@ export type RequestResponseChannels = {
   'terminal-kill': (id: string) => Promise<void>
   'terminal-get-buffer': (id: string) => Promise<string>
   'terminal-exists': (id: string) => Promise<boolean>
+  'terminal-force-redraw': (id: string) => Promise<void>
 }
