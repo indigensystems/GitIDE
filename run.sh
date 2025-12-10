@@ -4,6 +4,14 @@
 
 set -e
 
+# Check Node.js version (requires 20+)
+NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+if [ "$NODE_VERSION" -lt 20 ]; then
+    echo "Error: Node.js 20 or higher is required. You have Node.js $(node -v)"
+    echo "Please upgrade Node.js: https://nodejs.org/"
+    exit 1
+fi
+
 # Detect package manager (prefer yarn, fall back to npm)
 if command -v yarn &> /dev/null; then
     PKG_MANAGER="yarn"
