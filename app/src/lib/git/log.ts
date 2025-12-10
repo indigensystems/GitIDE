@@ -45,7 +45,7 @@ function mapSubmoduleStatusFileModes(
 
 /**
  * Map the raw status text from Git to an app-friendly value
- * shamelessly borrowed from GitHub Desktop (Windows)
+ * shamelessly borrowed from GitIDE (Windows)
  */
 function mapStatus(
   rawStatus: string,

@@ -995,7 +995,7 @@ export class RepositoryView extends React.Component<
       // Repository not found
       dispatcher.showPopup({
         type: PopupType.Error,
-        error: new Error(`Repository "${repoName}" not found.\n\nMake sure the repository is added to GitHub Desktop.`),
+        error: new Error(`Repository "${repoName}" not found.\n\nMake sure the repository is added to GitIDE.`),
       })
       return
     }

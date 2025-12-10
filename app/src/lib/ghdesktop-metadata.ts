@@ -103,9 +103,9 @@ export class GHDesktopMetadataService {
     if (!(await FSE.pathExists(readmePath))) {
       await FSE.writeFile(
         readmePath,
-        `# GitHub Desktop Tasks Metadata
+        `# GitIDE Tasks Metadata
 
-This folder contains task management metadata for GitHub Desktop.
+This folder contains task management metadata for GitIDE.
 
 ## Structure
 
