@@ -12,6 +12,12 @@
   flex: 1;
   overflow-y: auto;
   padding: var(--spacing-half) 0;
+
+  &.root-drop-target {
+    background: var(--box-selected-background-color);
+    outline: 2px dashed var(--focus-color, #58a6ff);
+    outline-offset: -2px;
+  }
 }
 
 .file-tree-node {

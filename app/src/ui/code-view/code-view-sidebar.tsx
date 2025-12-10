@@ -443,6 +443,54 @@ export class CodeViewSidebar extends React.Component<
     }
   }
 
+  // Root level drop handlers (for dropping files into the repository root)
+  private onRootDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+
+    const { draggingPath } = this.state
+    if (!draggingPath) return
+
+    // Allow drop if file is not already at root level
+    const parentDir = Path.dirname(draggingPath)
+    if (parentDir === this.props.repositoryPath) {
+      e.dataTransfer.dropEffect = 'none'
+      return
+    }
+
+    e.dataTransfer.dropEffect = 'move'
+    if (this.state.dropTargetPath !== this.props.repositoryPath) {
+      this.setState({ dropTargetPath: this.props.repositoryPath })
+    }
+  }
+
+  private onRootDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+
+    const sourcePath = e.dataTransfer.getData('text/plain')
+    if (!sourcePath) {
+      this.setState({ draggingPath: null, dropTargetPath: null })
+      return
+    }
+
+    // Don't drop if already at root
+    if (Path.dirname(sourcePath) === this.props.repositoryPath) {
+      this.setState({ draggingPath: null, dropTargetPath: null })
+      return
+    }
+
+    const fileName = Path.basename(sourcePath)
+    const destPath = Path.join(this.props.repositoryPath, fileName)
+
+    try {
+      await fs.promises.rename(sourcePath, destPath)
+      this.refreshFileTree()
+    } catch (err) {
+      console.error('Failed to move file to root:', err)
+    }
+
+    this.setState({ draggingPath: null, dropTargetPath: null })
+  }
+
   private onDrop = async (targetNode: IFileTreeNode, e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     e.stopPropagation()
@@ -873,9 +921,15 @@ export class CodeViewSidebar extends React.Component<
       )
     }
 
+    const isRootDropTarget = this.state.dropTargetPath === this.props.repositoryPath
+
     return (
       <div className="code-view-sidebar" onContextMenu={this.onSidebarContextMenu}>
-        <div className="file-tree">
+        <div
+          className={`file-tree ${isRootDropTarget ? 'root-drop-target' : ''}`}
+          onDragOver={this.onRootDragOver}
+          onDrop={this.onRootDrop}
+        >
           {this.renderNewItemInput()}
           {tree.children?.map(child => this.renderNode(child, 0))}
         </div>
