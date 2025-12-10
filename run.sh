@@ -11,6 +11,12 @@ else
     PKG_MANAGER="npm"
 fi
 
+# Install dependencies if node_modules doesn't exist
+if [ ! -d "app/node_modules" ]; then
+    echo "Installing dependencies with $PKG_MANAGER..."
+    $PKG_MANAGER install
+fi
+
 # Check if node-pty needs to be rebuilt for Electron
 check_node_pty() {
     local pty_node="app/node_modules/node-pty/build/Release/pty.node"
