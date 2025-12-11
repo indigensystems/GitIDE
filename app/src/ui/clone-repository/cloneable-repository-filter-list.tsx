@@ -21,6 +21,7 @@ import { LinkButton } from '../lib/link-button'
 import { Ref } from '../lib/ref'
 import { SectionFilterList } from '../lib/section-filter-list'
 import { TooltippedContent } from '../lib/tooltipped-content'
+import { repositoryHasTerminals } from '../repository'
 
 interface ICloneableRepositoryFilterListProps {
   /** The account to clone from. */
@@ -381,9 +382,15 @@ export class CloneableRepositoryFilterList extends React.PureComponent<ICloneabl
 
     // Local-only repos have a simpler display
     if (item.isLocalOnly) {
+      const hasTerminals = item.localRepoId !== undefined && repositoryHasTerminals(item.localRepoId)
       return (
         <div className="clone-repository-list-item local-only-repo">
           <Octicon className="icon" symbol={item.icon} />
+          {hasTerminals && (
+            <div className="terminal-indicator-left" title="Terminal session active">
+              <Octicon symbol={octicons.terminal} />
+            </div>
+          )}
           <TooltippedContent
             className="name"
             tooltip={item.localPath || item.text[0]}
@@ -403,9 +410,17 @@ export class CloneableRepositoryFilterList extends React.PureComponent<ICloneabl
 
     const showActions = onCloneRepository || onLocateRepository || onAddExistingRepository
 
+    // Check for terminals on GitHub repos that are cloned locally
+    const hasTerminals = item.localRepoId !== undefined && repositoryHasTerminals(item.localRepoId)
+
     return (
       <div className="clone-repository-list-item">
         <Octicon className="icon" symbol={item.icon} />
+        {hasTerminals && (
+          <div className="terminal-indicator-left" title="Terminal session active">
+            <Octicon symbol={octicons.terminal} />
+          </div>
+        )}
         <TooltippedContent
           className="name"
           tooltip={item.text[0]}

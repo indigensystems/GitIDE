@@ -60,6 +60,8 @@ function getIcon(gitHubRepo: IAPIRepository): OcticonSymbol {
 
 /** Info about a local repository for matching against API repos */
 export interface ILocalRepoInfo {
+  /** The repository ID in the local database */
+  readonly id: number
   /** The full name (owner/repo) of the GitHub repository */
   readonly fullName: string
   /** The local path of the repository */
@@ -80,18 +82,21 @@ const toListItems = (
   repositories: ReadonlyArray<IAPIRepository>,
   localRepos?: ReadonlyArray<ILocalRepoInfo>
 ) => {
-  // Build a map for quick lookup of local repos by fullName
-  const localRepoMap = new Map<string, string>()
+  // Build a map for quick lookup of local repos by fullName (stores both path and id)
+  const localRepoMap = new Map<string, { path: string; id: number }>()
   if (localRepos) {
     for (const local of localRepos) {
-      localRepoMap.set(local.fullName.toLowerCase(), local.path)
+      localRepoMap.set(local.fullName.toLowerCase(), {
+        path: local.path,
+        id: local.id,
+      })
     }
   }
 
   return repositories
     .map<ICloneableRepositoryListItem>(repo => {
       const fullName = `${repo.owner.login}/${repo.name}`.toLowerCase()
-      const localPath = localRepoMap.get(fullName)
+      const localInfo = localRepoMap.get(fullName)
       return {
         id: repo.html_url,
         text: [`${repo.owner.login}/${repo.name}`],
@@ -99,8 +104,9 @@ const toListItems = (
         name: repo.name,
         icon: getIcon(repo),
         archived: repo.archived,
-        isCloned: localPath !== undefined,
-        localPath,
+        isCloned: localInfo !== undefined,
+        localPath: localInfo?.path,
+        localRepoId: localInfo?.id,
       }
     })
     .sort((x, y) => compare(x.name, y.name))

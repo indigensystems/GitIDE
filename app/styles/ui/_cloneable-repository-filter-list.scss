@@ -30,6 +30,19 @@
   }
 
   .clone-repository-list-item {
+    .terminal-indicator-left {
+      display: flex;
+      flex-shrink: 0;
+      margin-right: var(--spacing-half);
+      align-items: center;
+
+      .octicon {
+        color: var(--color-success, #238636);
+        width: 14px;
+        height: 14px;
+      }
+    }
+
     .name {
       flex-grow: 1;
     }

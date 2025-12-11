@@ -2976,6 +2976,7 @@ export class App extends React.Component<IAppProps, IAppState> {
     for (const repo of this.state.repositories) {
       if (repo instanceof Repository && repo.gitHubRepository) {
         localRepos.push({
+          id: repo.id,
           fullName: repo.gitHubRepository.fullName,
           path: repo.path,
         })

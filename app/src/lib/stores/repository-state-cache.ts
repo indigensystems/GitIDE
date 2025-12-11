@@ -327,7 +327,7 @@ function getInitialRepositoryState(): IRepositoryState {
         isExcludedFromCommit: false,
       },
     },
-    selectedSection: RepositorySectionTab.Changes,
+    selectedSection: RepositorySectionTab.Code,
     branchesState: {
       tip: { kind: TipState.Unknown },
       defaultBranch: null,

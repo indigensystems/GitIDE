@@ -69,6 +69,20 @@ export class RepositoryListItem extends React.Component<
           symbol={iconForRepository(repository)}
         />
 
+        {(() => {
+          if (repository instanceof Repository) {
+            const hasTerminals = repositoryHasTerminals(repository.id)
+            if (hasTerminals) {
+              return (
+                <div className="terminal-indicator-left" title="Terminal session active">
+                  <Octicon symbol={octicons.terminal} />
+                </div>
+              )
+            }
+          }
+          return null
+        })()}
+
         <div className={classNames(classNameList)}>
           {prefix ? <span className="prefix">{prefix}</span> : null}
           <HighlightText
