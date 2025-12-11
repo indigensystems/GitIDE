@@ -212,6 +212,21 @@ export function onShowInstallingUpdate(eventHandler: () => void) {
   ipcRenderer.on('show-installing-update', eventHandler)
 }
 
+/** Subscribes to the "confirm quit with active terminals" event from main process */
+export function onConfirmQuitWithActiveTerminals(
+  eventHandler: (terminalCount: number) => void
+) {
+  ipcRenderer.on(
+    'confirm-quit-with-active-terminals',
+    (_event: Electron.IpcRendererEvent, terminalCount: number) => {
+      eventHandler(terminalCount)
+    }
+  )
+}
+
+/** Tell the main process that user confirmed quitting with active terminals */
+export const confirmQuitWithTerminals = sendProxy('confirm-quit-with-terminals', 0)
+
 /** Tell the main process to set the native theme source */
 export const setNativeThemeSource = sendProxy('set-native-theme-source', 1)
 

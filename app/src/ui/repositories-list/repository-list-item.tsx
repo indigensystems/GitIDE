@@ -12,6 +12,7 @@ import { createObservableRef } from '../lib/observable-ref'
 import { Tooltip } from '../lib/tooltip'
 import { enableAccessibleListToolTips } from '../../lib/feature-flag'
 import { TooltippedContent } from '../lib/tooltipped-content'
+import { repositoryHasTerminals } from '../repository'
 
 interface IRepositoryListItemProps {
   readonly repository: Repositoryish
@@ -80,6 +81,7 @@ export class RepositoryListItem extends React.Component<
           renderRepoIndicators({
             aheadBehind: this.props.aheadBehind,
             hasChanges: hasChanges,
+            hasTerminals: repositoryHasTerminals(repository.id),
           })}
       </div>
     )
@@ -107,10 +109,9 @@ export class RepositoryListItem extends React.Component<
       nextProps.repository instanceof Repository &&
       this.props.repository instanceof Repository
     ) {
-      return (
-        nextProps.repository.id !== this.props.repository.id ||
-        nextProps.matches !== this.props.matches
-      )
+      // Always re-render to pick up terminal state changes
+      // Terminal state is checked dynamically via repositoryHasTerminals()
+      return true
     } else {
       return true
     }
@@ -120,9 +121,11 @@ export class RepositoryListItem extends React.Component<
 const renderRepoIndicators: React.FunctionComponent<{
   aheadBehind: IAheadBehind | null
   hasChanges: boolean
+  hasTerminals: boolean
 }> = props => {
   return (
     <div className="repo-indicators">
+      {props.hasTerminals && renderTerminalIndicator()}
       {props.aheadBehind && renderAheadBehindIndicator(props.aheadBehind)}
       {props.hasChanges && renderChangesIndicator()}
     </div>
@@ -163,6 +166,18 @@ const renderChangesIndicator = () => {
       disabled={enableAccessibleListToolTips()}
     >
       <Octicon symbol={octicons.dotFill} />
+    </TooltippedContent>
+  )
+}
+
+const renderTerminalIndicator = () => {
+  return (
+    <TooltippedContent
+      className="terminal-indicator-wrapper"
+      tooltip="Terminal session is active in this repository"
+      disabled={enableAccessibleListToolTips()}
+    >
+      <Octicon symbol={octicons.terminal} />
     </TooltippedContent>
   )
 }

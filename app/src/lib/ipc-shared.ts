@@ -50,6 +50,7 @@ export type RequestChannels = {
   'will-quit': () => void
   'will-quit-even-if-updating': () => void
   'cancel-quitting': () => void
+  'confirm-quit-with-terminals': () => void
   'crash-ready': () => void
   'crash-quit': () => void
   'window-state-changed': (windowState: WindowState) => void
@@ -91,6 +92,7 @@ export type RequestChannels = {
   // Terminal IPC (main -> renderer)
   'terminal-data': (id: string, data: string) => void
   'terminal-exit': (id: string, exitCode: number) => void
+  'confirm-quit-with-active-terminals': (terminalCount: number) => void
 }
 
 /**

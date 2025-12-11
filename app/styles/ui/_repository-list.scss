@@ -198,6 +198,20 @@
     }
   }
 
+  .terminal-indicator-wrapper {
+    display: flex;
+    min-width: 14px;
+    justify-content: center;
+    align-items: center;
+    margin-left: var(--spacing-half);
+
+    .octicon {
+      color: var(--color-success, #238636);
+      width: 14px;
+      height: 14px;
+    }
+  }
+
   .ahead-behind {
     height: 16px;
     background: var(--list-item-badge-background-color);

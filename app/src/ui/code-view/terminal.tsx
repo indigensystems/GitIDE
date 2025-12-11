@@ -11,6 +11,10 @@ interface ITerminalProps {
   readonly cwd: string
   /** Whether this terminal tab is active */
   readonly isActive: boolean
+  /** Whether this terminal has been activated by user clicking the overlay */
+  readonly isActivated: boolean
+  /** Callback when user clicks overlay to activate terminal */
+  readonly onActivate?: () => void
   /** Callback when terminal exits */
   readonly onExit?: (exitCode: number) => void
 }
@@ -38,8 +42,9 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
 
   public componentDidUpdate(prevProps: ITerminalProps) {
     if (this.props.isActive && !prevProps.isActive) {
-      // Terminal became active, fit to container
+      // Terminal became active, fit to container and scroll to bottom
       this.fitTerminal()
+      this.xterm?.scrollToBottom()
       this.xterm?.focus()
     }
   }
@@ -110,7 +115,10 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
       console.log('[Terminal] Received data for id:', id, 'my id:', this.props.terminalId, 'data length:', data.length)
       if (id === this.props.terminalId && this.xterm) {
         console.log('[Terminal] Writing data to xterm')
-        this.xterm.write(data)
+        this.xterm.write(data, () => {
+          // Scroll to bottom after write completes
+          this.xterm?.scrollToBottom()
+        })
       }
     }
 
@@ -158,7 +166,10 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
       const buffer = await ipcRenderer.invoke('terminal-get-buffer', this.props.terminalId)
       if (buffer && buffer.length > 0) {
         console.log('[Terminal] Replaying buffer, length:', buffer.length)
-        this.xterm.write(buffer)
+        this.xterm.write(buffer, () => {
+          // Scroll to bottom after buffer replay completes
+          this.xterm?.scrollToBottom()
+        })
 
         // After replaying buffer, force a redraw by sending SIGWINCH.
         // This helps TUI apps (like Claude) redraw correctly.
@@ -167,6 +178,8 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
           try {
             await ipcRenderer.invoke('terminal-force-redraw', this.props.terminalId)
             console.log('[Terminal] Sent force redraw signal')
+            // Scroll to bottom again after redraw
+            this.xterm?.scrollToBottom()
           } catch (e) {
             console.error('[Terminal] Failed to send force redraw:', e)
           }
@@ -214,17 +227,51 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
     // Terminal is only killed when explicitly closed or app exits.
   }
 
+  private onOverlayClick = () => {
+    this.props.onActivate?.()
+  }
+
+  private renderActivationOverlay() {
+    if (this.props.isActivated) {
+      return null
+    }
+
+    return (
+      <div className="terminal-activation-overlay" onClick={this.onOverlayClick}>
+        <div className="terminal-activation-content">
+          <div className="terminal-activation-icon">▶</div>
+          <div className="terminal-activation-text">Click to activate terminal</div>
+        </div>
+      </div>
+    )
+  }
+
   public render() {
+    const { isActive, isActivated } = this.props
+
     return (
       <div
-        className="terminal-container"
-        ref={this.containerRef}
+        className="terminal-wrapper"
         style={{
           width: '100%',
           height: '100%',
-          display: this.props.isActive ? 'block' : 'none',
+          display: isActive ? 'flex' : 'none',
+          flexDirection: 'column',
+          position: 'relative',
         }}
-      />
+      >
+        {this.renderActivationOverlay()}
+        <div
+          className="terminal-container"
+          ref={this.containerRef}
+          style={{
+            width: '100%',
+            height: '100%',
+            opacity: isActivated ? 1 : 0.3,
+            pointerEvents: isActivated ? 'auto' : 'none',
+          }}
+        />
+      </div>
     )
   }
 }

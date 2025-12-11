@@ -28,6 +28,7 @@ import {
   terminateDesktopNotifications,
 } from './notifications'
 import { addTrustedIPCSender } from './trusted-ipc-sender'
+import { hasActiveTerminals, getActiveTerminalCount } from './terminal-manager'
 import { getUpdaterGUID } from '../lib/get-updater-guid'
 import { CLIAction } from '../lib/cli-action'
 
@@ -97,6 +98,8 @@ export class AppWindow {
 
     let quitting = false
     let quittingEvenIfUpdating = false
+    let terminalQuitConfirmed = false
+
     app.on('before-quit', () => {
       quitting = true
     })
@@ -116,6 +119,13 @@ export class AppWindow {
       quitting = false
       quittingEvenIfUpdating = false
       event.returnValue = true
+    })
+
+    ipcMain.on('confirm-quit-with-terminals', event => {
+      terminalQuitConfirmed = true
+      event.returnValue = true
+      // Close the window now that user confirmed
+      this.window.close()
     })
 
     this.window.on('close', e => {
@@ -153,6 +163,23 @@ export class AppWindow {
         }
         return
       }
+
+      // Check for active terminal sessions before quitting
+      if (hasActiveTerminals() && !terminalQuitConfirmed) {
+        e.preventDefault()
+        const terminalCount = getActiveTerminalCount()
+        ipcWebContents.send(
+          this.window.webContents,
+          'confirm-quit-with-active-terminals',
+          terminalCount
+        )
+        this.show()
+        return
+      }
+
+      // Reset the flag for next time
+      terminalQuitConfirmed = false
+
       nativeTheme.removeAllListeners()
       autoUpdater.removeAllListeners()
       terminateDesktopNotifications()

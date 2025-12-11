@@ -136,6 +136,9 @@ interface IRepositoryViewProps {
 
   /** Action buttons settings for file tree buttons */
   readonly actionButtonsSettings: IActionButtonsSettings
+
+  /** Callback when terminal activation state changes (for updating UI indicators) */
+  readonly onTerminalStateChanged?: () => void
 }
 
 /** Terminal grid layout mode */
@@ -158,6 +161,8 @@ interface IRepositoryViewState {
   readonly showTerminal: boolean
   /** Terminal grid layout mode */
   readonly terminalLayout: TerminalLayout
+  /** Set of terminal IDs that have been activated by user clicking the overlay */
+  readonly activatedTerminals: ReadonlySet<string>
 }
 
 const enum Tab {
@@ -174,10 +179,37 @@ const terminalsByRepo = new Map<number, string[]>()
 const terminalVisibleByRepo = new Map<number, boolean>()
 // Track terminal layout per repo
 const terminalLayoutByRepo = new Map<number, TerminalLayout>()
+// Track activated terminals per repo (user has clicked the overlay)
+const activatedTerminalsByRepo = new Map<number, Set<string>>()
 // Track if terminal should be visible on next repo (for carrying over visibility on switch)
 let carryOverTerminalVisible: boolean | null = null
 // Maximum number of terminals allowed
 const MAX_TERMINALS = 4
+
+/**
+ * Check if a repository has any activated terminal sessions.
+ * Used by repository list to show terminal indicator.
+ * Only counts terminals where user has clicked the activate overlay.
+ */
+export function repositoryHasTerminals(repoId: number): boolean {
+  const activated = activatedTerminalsByRepo.get(repoId)
+  return activated !== undefined && activated.size > 0
+}
+
+/**
+ * Get all repository IDs that have activated terminal sessions.
+ * Used by app to show indicators and warn before closing.
+ * Only counts terminals where user has clicked the activate overlay.
+ */
+export function getRepositoriesWithTerminals(): ReadonlyArray<number> {
+  const repoIds: number[] = []
+  for (const [repoId, activated] of activatedTerminalsByRepo.entries()) {
+    if (activated.size > 0) {
+      repoIds.push(repoId)
+    }
+  }
+  return repoIds
+}
 
 export class RepositoryView extends React.Component<
   IRepositoryViewProps,
@@ -208,6 +240,8 @@ export class RepositoryView extends React.Component<
     const repoId = props.repository.id
     const terminalIds = terminalsByRepo.get(repoId) || []
     const terminalLayout = terminalLayoutByRepo.get(repoId) || 'columns'
+    // Restore activated terminals from global map
+    const activatedTerminals = activatedTerminalsByRepo.get(repoId) || new Set<string>()
 
     // Use carry-over visibility if set (from switching repos), otherwise use stored value
     let showTerminal: boolean
@@ -228,6 +262,7 @@ export class RepositoryView extends React.Component<
       terminalIds,
       showTerminal,
       terminalLayout,
+      activatedTerminals,
     }
   }
 
@@ -671,6 +706,50 @@ export class RepositoryView extends React.Component<
     // this.onCodeTabClose(terminalTabPath)
   }
 
+  private onTerminalActivate = (terminalId: string) => {
+    const repoId = this.props.repository.id
+
+    // Update global tracking for repo indicators/counts
+    const globalActivated = activatedTerminalsByRepo.get(repoId) || new Set<string>()
+    globalActivated.add(terminalId)
+    activatedTerminalsByRepo.set(repoId, globalActivated)
+
+    this.setState(prevState => {
+      const newActivated = new Set(prevState.activatedTerminals)
+      newActivated.add(terminalId)
+      return { activatedTerminals: newActivated }
+    }, () => {
+      // Notify parent to update UI indicators
+      this.props.onTerminalStateChanged?.()
+    })
+  }
+
+  private onTerminalDoneWorking = (terminalTabPath: string) => {
+    // Extract terminal ID and remove from activated set
+    const terminalId = terminalTabPath.replace('terminal://', '')
+    const repoId = this.props.repository.id
+
+    // Update global tracking
+    const globalActivated = activatedTerminalsByRepo.get(repoId)
+    if (globalActivated) {
+      globalActivated.delete(terminalId)
+      if (globalActivated.size === 0) {
+        activatedTerminalsByRepo.delete(repoId)
+      }
+    }
+
+    this.setState(prevState => {
+      const newActivated = new Set(prevState.activatedTerminals)
+      newActivated.delete(terminalId)
+      return { activatedTerminals: newActivated }
+    }, () => {
+      // Notify parent to update UI indicators
+      this.props.onTerminalStateChanged?.()
+    })
+    // Close the terminal tab
+    this.onCodeTabClose(terminalTabPath)
+  }
+
   private onOpenClaude = async () => {
     const repositoryPath = this.props.repository.path
     const { spawn } = require('child_process')
@@ -971,6 +1050,9 @@ export class RepositoryView extends React.Component<
         onTerminalExit={this.onTerminalExit}
         onWikiLinkClick={this.onWikiLinkClick}
         editorSettings={this.props.editorSettings}
+        activatedTerminals={this.state.activatedTerminals}
+        onTerminalActivate={this.onTerminalActivate}
+        onTerminalDoneWorking={this.onTerminalDoneWorking}
       />
     )
   }
@@ -1348,6 +1430,8 @@ export class RepositoryView extends React.Component<
                     terminalId={terminalId}
                     cwd={this.props.repository.path}
                     isActive={showTerminal}
+                    isActivated={this.state.activatedTerminals.has(terminalId)}
+                    onActivate={() => this.onTerminalActivate(terminalId)}
                     onExit={(exitCode) => this.handleMainTerminalExit(terminalId, exitCode)}
                   />
                 </div>
@@ -1375,6 +1459,7 @@ export class RepositoryView extends React.Component<
                 terminalId={terminalId}
                 cwd={this.props.repository.path}
                 isActive={false}
+                isActivated={true}
                 onExit={(exitCode) => this.handleMainTerminalExit(terminalId, exitCode)}
               />
             </div>
@@ -1400,10 +1485,23 @@ export class RepositoryView extends React.Component<
       terminalVisibleByRepo.delete(repoId)
     }
 
-    // Update state
-    this.setState({
+    // Remove from activated tracking
+    const globalActivated = activatedTerminalsByRepo.get(repoId)
+    if (globalActivated) {
+      globalActivated.delete(terminalId)
+      if (globalActivated.size === 0) {
+        activatedTerminalsByRepo.delete(repoId)
+      }
+    }
+
+    // Update state - also remove from local activated set
+    this.setState(prevState => ({
       terminalIds: newTerminalIds,
-      showTerminal: newTerminalIds.length > 0 ? this.state.showTerminal : false,
+      showTerminal: newTerminalIds.length > 0 ? prevState.showTerminal : false,
+      activatedTerminals: new Set([...prevState.activatedTerminals].filter(id => id !== terminalId)),
+    }), () => {
+      // Notify parent to update UI indicators
+      this.props.onTerminalStateChanged?.()
     })
     this.isCreatingTerminal = false
   }
@@ -1703,7 +1801,21 @@ export class RepositoryView extends React.Component<
     // Update per-repo map
     terminalsByRepo.set(repoId, newTerminalIds)
 
-    this.setState({ terminalIds: newTerminalIds }, () => {
+    // Remove from activated tracking
+    const globalActivated = activatedTerminalsByRepo.get(repoId)
+    if (globalActivated) {
+      globalActivated.delete(terminalId)
+      if (globalActivated.size === 0) {
+        activatedTerminalsByRepo.delete(repoId)
+      }
+    }
+
+    this.setState(prevState => ({
+      terminalIds: newTerminalIds,
+      activatedTerminals: new Set([...prevState.activatedTerminals].filter(id => id !== terminalId)),
+    }), () => {
+      // Notify parent to update UI indicators
+      this.props.onTerminalStateChanged?.()
       // After grid layout changes, force remaining terminals to redraw
       setTimeout(() => this.forceAllTerminalsRedraw(), 300)
     })

@@ -106,6 +106,7 @@ export enum PopupType {
   GenerateCommitMessageDisclaimer = 'GenerateCommitMessageDisclaimer',
   CreateTask = 'CreateTask',
   AddRepositoryDialog = 'AddRepositoryDialog',
+  ConfirmQuitWithTerminals = 'ConfirmQuitWithTerminals',
 }
 
 interface IBasePopup {
@@ -474,6 +475,11 @@ export type PopupDetail =
   | {
       type: PopupType.AddRepositoryDialog
       initialTab?: AddRepositoryTab
+    }
+  | {
+      type: PopupType.ConfirmQuitWithTerminals
+      repositoryCount: number
+      onConfirm: () => void
     }
 
 export type Popup = IBasePopup & PopupDetail

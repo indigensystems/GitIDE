@@ -41,6 +41,12 @@ interface ICodeViewContentProps {
   readonly onWikiLinkClick?: (repoName: string | null, filePath: string) => void
   /** Editor settings for code editor appearance and behavior */
   readonly editorSettings?: IEditorSettings
+  /** Set of terminal IDs that have been activated by user */
+  readonly activatedTerminals?: ReadonlySet<string>
+  /** Callback when user activates a terminal by clicking overlay */
+  readonly onTerminalActivate?: (terminalId: string) => void
+  /** Callback when user clicks "Done Working" to close the terminal */
+  readonly onTerminalDoneWorking?: (terminalTabPath: string) => void
 }
 
 interface ICodeViewContentState {
@@ -627,8 +633,49 @@ export class CodeViewContent extends React.Component<
     this.props.onTerminalExit?.(terminalTabPath)
   }
 
+  private onTerminalActivate = (terminalId: string) => {
+    this.props.onTerminalActivate?.(terminalId)
+  }
+
+  private onDoneWorkingClick = () => {
+    const { activeTab } = this.props
+    if (activeTab && isTerminalTab(activeTab)) {
+      this.props.onTerminalDoneWorking?.(activeTab)
+    }
+  }
+
+  private renderTerminalHeader() {
+    const { activeTab, activatedTerminals } = this.props
+
+    if (!activeTab || !isTerminalTab(activeTab)) {
+      return null
+    }
+
+    const terminalId = getTerminalId(activeTab)
+    const isActivated = activatedTerminals?.has(terminalId) ?? false
+
+    if (!isActivated) {
+      return null
+    }
+
+    return (
+      <div className="terminal-header">
+        <div className="terminal-header-info">
+          <Octicon symbol={octicons.terminal} className="terminal-header-icon" />
+          <span className="terminal-header-title">Terminal Session</span>
+        </div>
+        <button
+          className="terminal-done-working-button"
+          onClick={this.onDoneWorkingClick}
+        >
+          Done Working
+        </button>
+      </div>
+    )
+  }
+
   private renderTerminals() {
-    const { openTabs, activeTab, repositoryPath } = this.props
+    const { openTabs, activeTab, repositoryPath, activatedTerminals } = this.props
 
     // Render all terminal tabs (keep them mounted but hidden when not active)
     const terminalTabs = openTabs.filter(tab => isTerminalTab(tab.filePath))
@@ -636,6 +683,7 @@ export class CodeViewContent extends React.Component<
     return terminalTabs.map(tab => {
       const terminalId = getTerminalId(tab.filePath)
       const isActive = tab.filePath === activeTab
+      const isActivated = activatedTerminals?.has(terminalId) ?? false
 
       return (
         <Terminal
@@ -643,6 +691,8 @@ export class CodeViewContent extends React.Component<
           terminalId={terminalId}
           cwd={repositoryPath}
           isActive={isActive}
+          isActivated={isActivated}
+          onActivate={() => this.onTerminalActivate(terminalId)}
           onExit={() => this.onTerminalExit(tab.filePath)}
         />
       )
@@ -661,7 +711,10 @@ export class CodeViewContent extends React.Component<
     if (isTerminalTab(activeTab)) {
       return (
         <div className="code-view-content terminal-view">
-          {this.renderTerminals()}
+          {this.renderTerminalHeader()}
+          <div className="terminal-content-area">
+            {this.renderTerminals()}
+          </div>
         </div>
       )
     }

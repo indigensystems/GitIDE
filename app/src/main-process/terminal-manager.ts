@@ -141,6 +141,20 @@ export function terminalExists(id: string): boolean {
 }
 
 /**
+ * Get the count of active terminals (for quit warning)
+ */
+export function getActiveTerminalCount(): number {
+  return terminals.size
+}
+
+/**
+ * Check if there are any active terminals
+ */
+export function hasActiveTerminals(): boolean {
+  return terminals.size > 0
+}
+
+/**
  * Force a terminal to redraw by triggering a resize.
  * This sends SIGWINCH to the PTY process, causing TUI apps to redraw.
  */

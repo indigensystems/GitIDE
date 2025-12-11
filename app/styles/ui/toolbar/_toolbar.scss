@@ -215,3 +215,31 @@
     }
   }
 }
+
+// Repository description with terminal indicator
+.repo-description-with-terminal {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-half);
+}
+
+.toolbar-terminal-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+
+  .octicon {
+    width: 12px;
+    height: 12px;
+    color: var(--color-success, #238636);
+  }
+
+  .terminal-count {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--color-success, #238636);
+    min-width: 12px;
+    text-align: center;
+  }
+}

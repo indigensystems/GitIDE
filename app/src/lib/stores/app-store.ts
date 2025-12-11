@@ -109,6 +109,8 @@ import {
   sendWillQuitEvenIfUpdatingSync,
   quitApp,
   sendCancelQuittingSync,
+  onConfirmQuitWithActiveTerminals,
+  confirmQuitWithTerminals,
 } from '../../ui/main-process-proxy'
 import {
   API,
@@ -772,6 +774,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
     )
 
     onShowInstallingUpdate(this.onShowInstallingUpdate)
+    onConfirmQuitWithActiveTerminals(this.onConfirmQuitWithActiveTerminals)
   }
 
   private initializeWindowState = async () => {
@@ -847,6 +850,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private onShowInstallingUpdate = () => {
     this._showPopup({
       type: PopupType.InstallingUpdate,
+    })
+  }
+
+  private onConfirmQuitWithActiveTerminals = (terminalCount: number) => {
+    this._showPopup({
+      type: PopupType.ConfirmQuitWithTerminals,
+      repositoryCount: terminalCount,
+      onConfirm: () => {
+        confirmQuitWithTerminals()
+      },
     })
   }
 

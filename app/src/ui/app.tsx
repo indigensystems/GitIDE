@@ -48,7 +48,7 @@ import { TitleBar, ZoomInfo, FullScreenInfo } from './window'
 import { Button } from './lib/button'
 
 import { RepositoriesList } from './repositories-list'
-import { RepositoryView } from './repository'
+import { RepositoryView, repositoryHasTerminals, getRepositoriesWithTerminals } from './repository'
 import { RenameBranch } from './rename-branch'
 import { DeleteBranch, DeleteRemoteBranch } from './delete-branch'
 import { CloningRepositoryView } from './cloning-repository'
@@ -190,6 +190,7 @@ import { isCertificateErrorSuppressedFor } from '../lib/suppress-certificate-err
 import { webUtils } from 'electron'
 import { showTestUI } from './lib/test-ui-components/test-ui-components'
 import { ConfirmCommitFilteredChanges } from './changes/confirm-commit-filtered-changes-dialog'
+import { ConfirmQuitWithTerminals } from './confirm-quit-with-terminals'
 import { AboutTestDialog } from './about/about-test-dialog'
 import { enableMultipleEnterpriseAccounts } from '../lib/feature-flag'
 import {
@@ -2637,6 +2638,16 @@ export class App extends React.Component<IAppProps, IAppState> {
           />
         )
       }
+      case PopupType.ConfirmQuitWithTerminals: {
+        return (
+          <ConfirmQuitWithTerminals
+            key="confirm-quit-with-terminals"
+            repositoryCount={popup.repositoryCount}
+            onConfirm={popup.onConfirm}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
       default:
         return assertNever(popup, `Unknown popup type: ${popup}`)
     }
@@ -3291,6 +3302,12 @@ export class App extends React.Component<IAppProps, IAppState> {
     }
   }
 
+  /** Called when terminal activation state changes to update UI indicators */
+  private onTerminalStateChanged = () => {
+    // Force re-render to update terminal count in toolbar
+    this.forceUpdate()
+  }
+
   private renderRepositoryToolbarButton() {
     const selection = this.state.selectedState
 
@@ -3329,11 +3346,30 @@ export class App extends React.Component<IAppProps, IAppState> {
      * are open */
     const enableFocusTrap = this.state.currentPopup === null
 
+    // Check if current repository has active terminal sessions
+    const hasTerminals = repository instanceof Repository && repositoryHasTerminals(repository.id)
+    // Get count of all repos with terminals
+    const reposWithTerminalsCount = getRepositoriesWithTerminals().length
+
+    const description = hasTerminals || reposWithTerminalsCount > 0 ? (
+      <span className="repo-description-with-terminal">
+        {__DARWIN__ ? 'Current Repository' : 'Current repository'}
+        {reposWithTerminalsCount > 0 && (
+          <span className="toolbar-terminal-indicator" title={`${reposWithTerminalsCount} repo${reposWithTerminalsCount > 1 ? 's' : ''} with active terminals`}>
+            <Octicon symbol={octicons.terminal} />
+            <span className="terminal-count">{reposWithTerminalsCount}</span>
+          </span>
+        )}
+      </span>
+    ) : (
+      __DARWIN__ ? 'Current Repository' : 'Current repository'
+    )
+
     return (
       <ToolbarDropdown
         icon={icon}
         title={title}
-        description={__DARWIN__ ? 'Current Repository' : 'Current repository'}
+        description={description}
         tooltip={tooltip}
         dropdownStyle={ToolbarDropdownStyle.MultiOption}
         onContextMenu={this.onRepositoryToolbarButtonContextMenu}
@@ -4003,6 +4039,7 @@ export class App extends React.Component<IAppProps, IAppState> {
           selectedProject={state.selectedProject}
           editorSettings={state.editorSettings}
           actionButtonsSettings={state.actionButtonsSettings}
+          onTerminalStateChanged={this.onTerminalStateChanged}
         />
       )
     } else if (selectedState.type === SelectionType.CloningRepository) {

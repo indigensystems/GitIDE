@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Build and run GitHub Desktop in production mode (cross-platform)
+# Build and run GitIDE in production mode (cross-platform)
 
 set -e
 
@@ -76,27 +76,25 @@ echo "Checking for running instances..."
 case "$(uname -s)" in
     Darwin)
         # Check if app is running and kill it
-        if pgrep -f "GitHub Desktop" > /dev/null 2>&1; then
-            echo "Closing GitHub Desktop..."
+        if pgrep -f "GitIDE" > /dev/null 2>&1; then
+            echo "Closing GitIDE..."
             # Try graceful quit first
-            osascript -e 'quit app "GitHub Desktop"' 2>/dev/null || true
-            osascript -e 'quit app "GitHub Desktop Dev"' 2>/dev/null || true
+            osascript -e 'quit app "GitIDE"' 2>/dev/null || true
             sleep 1
             # Force kill if still running
-            pkill -9 -f "GitHub Desktop" 2>/dev/null || true
+            pkill -9 -f "GitIDE" 2>/dev/null || true
             sleep 1
         fi
         ;;
     Linux)
-        if pgrep -f "github-desktop" > /dev/null 2>&1; then
-            echo "Closing GitHub Desktop..."
-            pkill -9 -f "github-desktop" 2>/dev/null || true
+        if pgrep -f "gitide" > /dev/null 2>&1; then
+            echo "Closing GitIDE..."
+            pkill -9 -f "gitide" 2>/dev/null || true
             sleep 1
         fi
         ;;
     MINGW*|MSYS*|CYGWIN*)
-        taskkill /F /IM "GitHub Desktop.exe" 2>/dev/null || true
-        taskkill /F /IM "GitHub Desktop Dev.exe" 2>/dev/null || true
+        taskkill /F /IM "GitIDE.exe" 2>/dev/null || true
         sleep 1
         ;;
 esac
@@ -104,31 +102,31 @@ esac
 echo "Building production app with $PKG_MANAGER..."
 $PKG_MANAGER run build:prod
 
-echo "Launching GitHub Desktop..."
+echo "Launching GitIDE..."
 
 case "$(uname -s)" in
     Darwin)
         # macOS
         if [ "$(uname -m)" = "arm64" ]; then
-            open "./dist/GitHub Desktop-darwin-arm64/GitHub Desktop.app"
+            open "./dist/GitIDE-darwin-arm64/GitIDE.app"
         else
-            open "./dist/GitHub Desktop-darwin-x64/GitHub Desktop.app"
+            open "./dist/GitIDE-darwin-x64/GitIDE.app"
         fi
         ;;
     Linux)
         # Linux
         if [ "$(uname -m)" = "x86_64" ]; then
-            "./dist/GitHub Desktop-linux-x64/github-desktop"
+            "./dist/GitIDE-linux-x64/gitide"
         else
-            "./dist/GitHub Desktop-linux-arm64/github-desktop"
+            "./dist/GitIDE-linux-arm64/gitide"
         fi
         ;;
     MINGW*|MSYS*|CYGWIN*)
         # Windows (Git Bash, MSYS, Cygwin)
         if [ "$PROCESSOR_ARCHITECTURE" = "AMD64" ]; then
-            "./dist/GitHub Desktop-win32-x64/GitHub Desktop.exe"
+            "./dist/GitIDE-win32-x64/GitIDE.exe"
         else
-            "./dist/GitHub Desktop-win32-arm64/GitHub Desktop.exe"
+            "./dist/GitIDE-win32-arm64/GitIDE.exe"
         fi
         ;;
     *)
