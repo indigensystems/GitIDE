@@ -1,0 +1,73 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  release:
+    types: [created]
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [arm64, x64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        run: yarn build:prod
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+
+      - name: Package
+        run: yarn package
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GitIDE-macOS-${{ matrix.arch }}
+          path: dist/*.zip
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        run: yarn build:prod
+
+      - name: Package
+        run: yarn package
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GitIDE-Windows-x64
+          path: |
+            dist/*.exe
+            dist/*.msi
