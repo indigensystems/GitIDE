@@ -1,110 +1,111 @@
-# [GitHub Desktop](https://desktop.github.com)
+# GitIDE
 
-[GitHub Desktop](https://desktop.github.com/) is an open-source [Electron](https://www.electronjs.org/)-based
-GitHub app. It is written in [TypeScript](https://www.typescriptlang.org) and
-uses [React](https://reactjs.org/).
+A lightweight IDE built on Electron that combines Git version control with code editing, integrated terminal, and project management — all in one application.
 
-<picture>
-  <source
-    srcset="https://user-images.githubusercontent.com/634063/202742848-63fa1488-6254-49b5-af7c-96a6b50ea8af.png"
-    media="(prefers-color-scheme: dark)"
-  />
-  <img
-    width="1072"
-    src="https://user-images.githubusercontent.com/634063/202742985-bb3b3b94-8aca-404a-8d8a-fd6a6f030672.png"
-    alt="A screenshot of the GitHub Desktop application showing changes being viewed and committed with two attributed co-authors"
-  />
-</picture>
+GitIDE started as a fork of GitHub Desktop and evolved into a full development environment where you can edit code, run terminals, manage tasks, and handle Git operations without switching between applications.
 
-## Where can I get it?
+## Key Features
 
-Download the official installer for your operating system:
+### Code Editor
 
- - [macOS](https://central.github.com/deployments/desktop/desktop/latest/darwin)
- - [macOS (Apple silicon)](https://central.github.com/deployments/desktop/desktop/latest/darwin-arm64)
- - [Windows](https://central.github.com/deployments/desktop/desktop/latest/win32)
- - [Windows machine-wide install](https://central.github.com/deployments/desktop/desktop/latest/win32?format=msi)
+* **Multi-file editing** with tabs and unsaved changes tracking
 
-Linux is not officially supported; however, you can find installers created for Linux from a fork of GitHub Desktop in the [Community Releases](https://github.com/desktop/desktop#community-releases) section.
+* **Syntax highlighting** for JavaScript, TypeScript, Python, HTML, CSS, JSON, YAML, shell, and more (powered by CodeMirror 6)
 
-### Beta Channel
+* **Markdown editing** with rich formatting toolbar using Milkdown
 
-Want to test out new features and get fixes before everyone else? Install the
-beta channel to get access to early builds of Desktop:
+* **File explorer** with create, delete, rename, and drag-and-drop support
 
- - [macOS](https://central.github.com/deployments/desktop/desktop/latest/darwin?env=beta)
- - [macOS (Apple silicon)](https://central.github.com/deployments/desktop/desktop/latest/darwin-arm64?env=beta)
- - [Windows](https://central.github.com/deployments/desktop/desktop/latest/win32?env=beta)
- - [Windows (ARM64)](https://central.github.com/deployments/desktop/desktop/latest/win32-arm64?env=beta)
+* **Editor settings** including theme, font size, line height, and auto-save
 
-The release notes for the latest beta versions are available [here](https://desktop.github.com/release-notes/?env=beta).
+### Integrated Terminal
 
-### Past Releases
-You can find past releases at https://desktop.githubusercontent.com. After installation of a past version, the auto update functionality will attempt to download the latest version. 
+* **Up to 4 terminals** per repository running simultaneously
 
-### Community Releases
+* **Flexible layouts** — single, split columns, split rows, or grid
 
-There are several community-supported package managers that can be used to
-install GitHub Desktop:
- - Windows users can install using [winget](https://docs.microsoft.com/en-us/windows/package-manager/winget/) `c:\> winget install github-desktop` or [Chocolatey](https://chocolatey.org/) `c:\> choco install github-desktop`
- - macOS users can install using [Homebrew](https://brew.sh/) package manager:
-      `$ brew install --cask github`
+* **Persistent state** across repository switches
 
-Installers for various Linux distributions can be found on the
-[`shiftkey/desktop`](https://github.com/shiftkey/desktop) fork.
+* **Large scrollback buffer** (10,000 lines) for long-running tasks
 
-## Is GitHub Desktop right for me? What are the primary areas of focus?
+* **Terminal indicators** showing which repositories have active sessions
 
-[This document](https://github.com/desktop/desktop/blob/development/docs/process/what-is-desktop.md) describes the focus of GitHub Desktop and who the product is most useful for.
+* **Quit confirmation** when terminals are running
 
-## I have a problem with GitHub Desktop
+### Task & Issue Management
 
-Note: The [GitHub Desktop Code of Conduct](https://github.com/desktop/desktop/blob/development/CODE_OF_CONDUCT.md) applies in all interactions relating to the GitHub Desktop project.
+* **GitHub Projects V2 integration** for task tracking
 
-First, please search the [open issues](https://github.com/desktop/desktop/issues?q=is%3Aopen)
-and [closed issues](https://github.com/desktop/desktop/issues?q=is%3Aclosed)
-to see if your issue hasn't already been reported (it may also be fixed).
+* **Issues panel** with filtering by state (open/closed/all)
 
-There is also a list of [known issues](https://github.com/desktop/desktop/blob/development/docs/known-issues.md)
-that are being tracked against Desktop, and some of these issues have workarounds.
+* **Task pinning** and active task designation
 
-If you can't find an issue that matches what you're seeing, open a [new issue](https://github.com/desktop/desktop/issues/new/choose),
-choose the right template and provide us with enough information to investigate
-further.
+* **Issue detail view** with labels and project status
 
-## The issue I reported isn't fixed yet. What can I do?
+### Git Operations
 
-If nobody has responded to your issue in a few days, you're welcome to respond to it with a friendly ping in the issue. Please do not respond more than a second time if nobody has responded. The GitHub Desktop maintainers are constrained in time and resources, and diagnosing individual configurations can be difficult and time consuming. While we'll try to at least get you pointed in the right direction, we can't guarantee we'll be able to dig too deeply into any one person's issue.
+* Branch management and switching
 
-## How can I contribute to GitHub Desktop?
+* Commit creation with staging
 
-The [CONTRIBUTING.md](./.github/CONTRIBUTING.md) document will help you get setup and
-familiar with the source. The [documentation](docs/) folder also contains more
-resources relevant to the project.
+* Push, pull, and fetch
 
-If you're looking for something to work on, check out the [help wanted](https://github.com/desktop/desktop/issues?q=is%3Aissue+is%3Aopen+label%3A%22help%20wanted%22) label.
+* Stash management
 
-## Building Desktop
+* Merge and rebase
 
-To setup your development environment for building Desktop, check out: [`setup.md`](./docs/contributing/setup.md).
+* History visualization with diffs
 
-## More Resources
+### Developer Workflow
 
-See [desktop.github.com](https://desktop.github.com) for more product-oriented
-information about GitHub Desktop.
+* **Dev script buttons** — auto-detects `run.sh`, `start-dev.sh`, `stop-dev.sh`, `restart-dev.sh`
 
-See our [getting started documentation](https://docs.github.com/en/desktop/overview/getting-started-with-github-desktop) for more information on how to set up, authenticate, and configure GitHub Desktop.
+* **Wiki links** — navigate between repositories with `[[repo-name/file-path]]` syntax in markdown (broken lol)
+
+* **Custom action buttons** — configurable buttons for your workflow
+
+## Tabs
+
+GitIDE organizes your workflow into five main tabs:
+
+| Tab         | Purpose                             |
+| ----------- | ----------------------------------- |
+| **Code**    | File explorer, editor, and terminal |
+| **Changes** | Git staging and commit              |
+| **History** | Commit log and diffs                |
+| **Issues**  | Repository issues from GitHub       |
+| **Tasks**   | GitHub Projects V2 tasks            |
+
+## Building & Running
+
+```bash
+# Build and run production version
+./run.sh
+
+# Development mode (alternative)
+yarn
+yarn build:dev
+yarn start
+```
+
+**Requirements:** Node.js 20+
+
+## Tech Stack
+
+* **Electron** — desktop application framework
+
+* **React** — UI components
+
+* **TypeScript** — type-safe codebase
+
+* **CodeMirror 6** — code editor
+
+* **Milkdown** — markdown editor
+
+* **xterm.js** — terminal emulator
+
+* **node-pty** — terminal backend
 
 ## License
 
-**[MIT](LICENSE)**
-
-The MIT license grant is not for GitHub's trademarks, which include the logo
-designs. GitHub reserves all trademark and copyright rights in and to all
-GitHub trademarks. GitHub's logos include, for instance, the stylized
-Invertocat designs that include "logo" in the file title in the following
-folder: [logos](app/static/logos).
-
-GitHub® and its stylized versions and the Invertocat mark are GitHub's
-Trademarks or registered Trademarks. When using GitHub's logos, be sure to
-follow the GitHub [logo guidelines](https://github.com/logos).
+[MIT](LICENSE)
