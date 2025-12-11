@@ -37,6 +37,7 @@ jobs:
         run: yarn build:prod
         env:
           TARGET_ARCH: ${{ matrix.arch }}
+          RELEASE_CHANNEL: development
 
       - name: Package
         run: yarn package
@@ -66,12 +67,16 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: yarn install --frozen-lockfile --network-timeout 100000
-        env:
-          npm_config_node_gyp: 'C:\hostedtoolcache\windows\node\20.19.5\x64\node_modules\npm\node_modules\node-gyp\bin\node-gyp.js'
+        run: yarn install --frozen-lockfile --network-timeout 100000 --ignore-scripts
 
       - name: Build
         run: yarn build:prod
+        env:
+          RELEASE_CHANNEL: development
+
+      - name: Rebuild native modules for Electron
+        run: npx electron-rebuild -f -w node-pty
+        working-directory: app
 
       - name: Package
         run: yarn package
@@ -115,6 +120,7 @@ jobs:
         run: yarn build:prod
         env:
           TARGET_ARCH: ${{ matrix.arch }}
+          RELEASE_CHANNEL: development
 
       - name: List dist directory
         run: ls -la dist/
