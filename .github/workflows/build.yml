@@ -97,13 +97,21 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          sdk: '10.0.22621.0'
+
       - name: Install dependencies
         run: yarn install --frozen-lockfile --network-timeout 100000
+        env:
+          npm_config_msvs_version: '2022'
 
       - name: Build
         run: yarn build:prod
         env:
           RELEASE_CHANNEL: development
+          npm_config_msvs_version: '2022'
 
       - name: Package
         run: yarn package
