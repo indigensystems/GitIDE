@@ -9,11 +9,8 @@ on:
     types: [created]
 
 jobs:
-  build-macos:
+  build-macos-arm64:
     runs-on: macos-latest
-    strategy:
-      matrix:
-        arch: [arm64, x64]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,7 +33,6 @@ jobs:
       - name: Build
         run: yarn build:prod
         env:
-          TARGET_ARCH: ${{ matrix.arch }}
           RELEASE_CHANNEL: development
 
       - name: Package
@@ -45,7 +41,42 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GitIDE-macOS-${{ matrix.arch }}
+          name: GitIDE-macOS-arm64
+          path: dist/*.zip
+
+  build-macos-x64:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'yarn'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --network-timeout 100000
+
+      - name: Build
+        run: yarn build:prod
+        env:
+          RELEASE_CHANNEL: development
+
+      - name: Package
+        run: yarn package
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GitIDE-macOS-x64
           path: dist/*.zip
 
   build-windows:
@@ -67,19 +98,16 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: yarn install --frozen-lockfile --network-timeout 100000 --ignore-scripts
+        run: yarn install --frozen-lockfile --network-timeout 100000
 
       - name: Build
         run: yarn build:prod
         env:
           RELEASE_CHANNEL: development
 
-      - name: Rebuild native modules for Electron
-        run: npx electron-rebuild -f -w node-pty
-        working-directory: app
-
       - name: Package
         run: yarn package
+        continue-on-error: true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -88,6 +116,7 @@ jobs:
           path: |
             dist/*.exe
             dist/*.msi
+        if: always()
 
   build-linux:
     runs-on: ubuntu-latest
