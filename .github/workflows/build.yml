@@ -27,22 +27,57 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Import Code Signing Certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+          rm certificate.p12
+
       - name: Install dependencies
         run: yarn install --frozen-lockfile --network-timeout 100000
 
       - name: Build
         run: yarn build:prod
         env:
-          RELEASE_CHANNEL: development
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Package
         run: yarn package
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Create DMG
+        run: |
+          cd dist
+          APP_NAME=$(ls -d *.app | head -1)
+          create-dmg \
+            --volname "GitIDE" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --app-drop-link 600 185 \
+            "GitIDE-macOS-arm64.dmg" \
+            "$APP_NAME" || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: GitIDE-macOS-arm64
-          path: dist/*.zip
+          path: dist/*.dmg
 
   build-macos-x64:
     runs-on: macos-15-intel
@@ -62,22 +97,57 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Import Code Signing Certificate
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" build.keychain
+          rm certificate.p12
+
       - name: Install dependencies
         run: yarn install --frozen-lockfile --network-timeout 100000
 
       - name: Build
         run: yarn build:prod
         env:
-          RELEASE_CHANNEL: development
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
       - name: Package
         run: yarn package
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Create DMG
+        run: |
+          cd dist
+          APP_NAME=$(ls -d *.app | head -1)
+          create-dmg \
+            --volname "GitIDE" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --app-drop-link 600 185 \
+            "GitIDE-macOS-x64.dmg" \
+            "$APP_NAME" || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: GitIDE-macOS-x64
-          path: dist/*.zip
+          path: dist/*.dmg
 
   build-windows:
     runs-on: windows-2022
@@ -108,21 +178,22 @@ jobs:
       - name: Build
         run: yarn build:prod
         env:
-          RELEASE_CHANNEL: development
           npm_config_msvs_version: '2022'
 
       - name: Package
         run: yarn package
-        continue-on-error: true
+
+      - name: Create ZIP
+        run: |
+          cd dist
+          $dirname = Get-ChildItem -Directory | Select-Object -First 1 -ExpandProperty Name
+          Compress-Archive -Path $dirname -DestinationPath "GitIDE-Windows-x64.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: GitIDE-Windows-x64
-          path: |
-            dist/*.exe
-            dist/*.msi
-        if: always()
+          path: dist/*.zip
 
   build-linux:
     runs-on: ubuntu-latest
@@ -155,10 +226,6 @@ jobs:
         run: yarn build:prod
         env:
           TARGET_ARCH: ${{ matrix.arch }}
-          RELEASE_CHANNEL: development
-
-      - name: List dist directory
-        run: ls -la dist/
 
       - name: Create Linux package
         run: |
