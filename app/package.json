@@ -67,7 +67,7 @@
     "memoize-one": "^4.0.3",
     "minimist": "^1.2.8",
     "mri": "^1.1.0",
-    "node-pty": "^1.0.0",
+    "node-pty": "1.1.0-beta41",
     "p-limit": "^2.2.0",
     "p-memoize": "^7.1.1",
     "primer-support": "^4.0.0",
