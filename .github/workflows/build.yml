@@ -80,7 +80,7 @@ jobs:
           path: dist/*.zip
 
   build-windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
         with:
@@ -99,8 +99,6 @@ jobs:
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
-        with:
-          sdk: '10.0.22621.0'
 
       - name: Install dependencies
         run: yarn install --frozen-lockfile --network-timeout 100000
