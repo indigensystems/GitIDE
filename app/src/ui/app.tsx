@@ -1017,6 +1017,20 @@ export class App extends React.Component<IAppProps, IAppState> {
       if (this.isShowingModal) {
         return
       }
+
+      // Don't handle drops that target the terminal - let the terminal handle those
+      const target = e.target as HTMLElement | null
+      const isTerminalDrop =
+        target?.closest('.terminal-wrapper') ||
+        target?.closest('.terminal-container') ||
+        target?.closest('.xterm')
+
+      if (isTerminalDrop) {
+        // Still prevent default but let terminal handle the drop
+        e.preventDefault()
+        return
+      }
+
       if (e.dataTransfer != null) {
         const files = e.dataTransfer.files
         this.handleDragAndDrop(files)

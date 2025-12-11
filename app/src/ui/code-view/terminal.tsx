@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { webUtils } from 'electron'
 import * as ipcRenderer from '../../lib/ipc-renderer'
 import '@xterm/xterm/css/xterm.css'
 
@@ -21,6 +22,7 @@ interface ITerminalProps {
 
 interface ITerminalState {
   readonly isReady: boolean
+  readonly isDragOver: boolean
 }
 
 export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
@@ -33,7 +35,7 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
 
   public constructor(props: ITerminalProps) {
     super(props)
-    this.state = { isReady: false }
+    this.state = { isReady: false, isDragOver: false }
   }
 
   public componentDidMount() {
@@ -115,9 +117,15 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
       console.log('[Terminal] Received data for id:', id, 'my id:', this.props.terminalId, 'data length:', data.length)
       if (id === this.props.terminalId && this.xterm) {
         console.log('[Terminal] Writing data to xterm')
+        // Check if user is at (or near) the bottom before writing
+        const buffer = this.xterm.buffer.active
+        const isAtBottom = buffer.viewportY >= buffer.baseY - 1
+
         this.xterm.write(data, () => {
-          // Scroll to bottom after write completes
-          this.xterm?.scrollToBottom()
+          // Only auto-scroll if user was already at the bottom
+          if (isAtBottom) {
+            this.xterm?.scrollToBottom()
+          }
         })
       }
     }
@@ -231,6 +239,79 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
     this.props.onActivate?.()
   }
 
+  /**
+   * Escape a file path for use in shell commands.
+   * Wraps in single quotes and escapes any existing single quotes.
+   */
+  private escapePathForShell(filePath: string): string {
+    // Escape single quotes by ending quote, adding escaped quote, starting new quote
+    // e.g., "file's name" -> 'file'\''s name'
+    const escaped = filePath.replace(/'/g, "'\\''")
+    return `'${escaped}'`
+  }
+
+  private onDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  private onDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    // Only show drag indicator if files are being dragged
+    if (e.dataTransfer.types.includes('Files')) {
+      this.setState({ isDragOver: true })
+    }
+  }
+
+  private onDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    // Only hide if we're leaving the terminal wrapper entirely
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX
+    const y = e.clientY
+
+    if (x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom) {
+      this.setState({ isDragOver: false })
+    }
+  }
+
+  private onDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    console.log('[Terminal] onDrop called')
+    e.preventDefault()
+    e.stopPropagation()
+    this.setState({ isDragOver: false })
+
+    // Get dropped files
+    const files = e.dataTransfer.files
+    console.log('[Terminal] Dropped files count:', files.length)
+    if (files.length === 0) {
+      return
+    }
+
+    // Build escaped path string for all dropped files
+    const paths: string[] = []
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      // Use webUtils.getPathForFile for Electron with context isolation
+      const filePath = webUtils.getPathForFile(file)
+      console.log('[Terminal] File path:', filePath)
+      if (filePath) {
+        paths.push(this.escapePathForShell(filePath))
+      }
+    }
+
+    if (paths.length > 0) {
+      // Write paths to terminal, separated by spaces
+      const pathString = paths.join(' ')
+      console.log('[Terminal] Writing to terminal:', pathString)
+      ipcRenderer.invoke('terminal-write', this.props.terminalId, pathString)
+    }
+  }
+
   private renderActivationOverlay() {
     if (this.props.isActivated) {
       return null
@@ -248,6 +329,7 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
 
   public render() {
     const { isActive, isActivated } = this.props
+    const { isDragOver } = this.state
 
     return (
       <div
@@ -259,8 +341,20 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
           flexDirection: 'column',
           position: 'relative',
         }}
+        onDragOver={this.onDragOver}
+        onDragEnter={this.onDragEnter}
+        onDragLeave={this.onDragLeave}
+        onDrop={this.onDrop}
       >
         {this.renderActivationOverlay()}
+        {isDragOver && (
+          <div className="terminal-drop-overlay">
+            <div className="terminal-drop-content">
+              <div className="terminal-drop-icon">📁</div>
+              <div className="terminal-drop-text">Drop to insert file path</div>
+            </div>
+          </div>
+        )}
         <div
           className="terminal-container"
           ref={this.containerRef}
