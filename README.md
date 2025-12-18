@@ -4,6 +4,8 @@ A lightweight IDE built on Electron that combines Git version control with code 
 
 GitIDE started as a fork of GitHub Desktop and evolved into a full development environment where you can edit code, run terminals, manage tasks, and handle Git operations without switching between applications.
 
+![GitIDE Screenshot](docs/screenshot.png)
+
 ## Key Features
 
 ### Code Editor
