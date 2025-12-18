@@ -13,7 +13,7 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software without any modification,
 exemption or additional provision. All operational distributions, including
-executables, embedded installations, package repositories, container images
+executables, embedded installations, package repositories, container images,
 and network deployments must preserve their users' access to original source,
 documentation, build scripts, configuration and modifications necessary to
 reproduce the intended implementation, in order to promote operational
