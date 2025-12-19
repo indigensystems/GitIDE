@@ -36,9 +36,13 @@ export function createTerminal(window: BrowserWindow, cwd: string): string {
     env: {
       ...process.env,
       TERM: 'xterm-256color',
+      TERM_PROGRAM: 'GitHubDesktop',
+      TERM_PROGRAM_VERSION: '1.0.0',
       SHELL: shell,
       HOME: os.homedir(),
       LANG: process.env.LANG || 'en_US.UTF-8',
+      // Prevent any shell integration scripts from triggering external apps
+      __CFBundleIdentifier: 'com.github.GitHubClient',
     } as { [key: string]: string },
   })
 

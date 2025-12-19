@@ -32,6 +32,10 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
   private resizeObserver: ResizeObserver | null = null
   private dataHandler: ((event: Electron.IpcRendererEvent, id: string, data: string) => void) | null = null
   private exitHandler: ((event: Electron.IpcRendererEvent, id: string, exitCode: number) => void) | null = null
+  // Track if we're in alternate screen buffer (TUI mode like Claude Code)
+  private inAlternateBuffer: boolean = false
+  // Store scroll position when entering alternate buffer
+  private savedScrollPosition: number = 0
 
   public constructor(props: ITerminalProps) {
     super(props)
@@ -114,17 +118,57 @@ export class Terminal extends React.Component<ITerminalProps, ITerminalState> {
 
     // Set up IPC listeners for terminal data
     this.dataHandler = (_event, id: string, data: string) => {
-      console.log('[Terminal] Received data for id:', id, 'my id:', this.props.terminalId, 'data length:', data.length)
       if (id === this.props.terminalId && this.xterm) {
-        console.log('[Terminal] Writing data to xterm')
-        // Check if user is at (or near) the bottom before writing
+        // Save scroll state before writing
         const buffer = this.xterm.buffer.active
-        const isAtBottom = buffer.viewportY >= buffer.baseY - 1
+        const savedViewportY = buffer.viewportY
+        const savedBaseY = buffer.baseY
+        const isAtBottom = savedViewportY >= savedBaseY - 1
+
+        // Track alternate buffer switches
+        // Enter: ESC[?1049h, ESC[?1047h, ESC[?47h
+        // Leave: ESC[?1049l, ESC[?1047l, ESC[?47l
+        const enterAltBuffer = /\x1b\[\?(?:1049|1047|47)h/.test(data)
+        const leaveAltBuffer = /\x1b\[\?(?:1049|1047|47)l/.test(data)
+
+        // Save scroll position when entering alternate buffer
+        if (enterAltBuffer && !this.inAlternateBuffer) {
+          this.savedScrollPosition = savedViewportY
+          this.inAlternateBuffer = true
+        }
+
+        // Track if leaving alternate buffer
+        if (leaveAltBuffer && this.inAlternateBuffer) {
+          this.inAlternateBuffer = false
+        }
 
         this.xterm.write(data, () => {
-          // Only auto-scroll if user was already at the bottom
-          if (isAtBottom) {
-            this.xterm?.scrollToBottom()
+          if (this.xterm) {
+            const newBuffer = this.xterm.buffer.active
+            const newBaseY = newBuffer.baseY
+            const newViewportY = newBuffer.viewportY
+
+            // Detect if xterm jumped away from the bottom unexpectedly
+            // This can happen when TUI apps (like Claude) output data that
+            // causes xterm to scroll to old positions in the buffer
+            const unexpectedJump = isAtBottom && newViewportY < newBaseY - 5
+
+            if (unexpectedJump) {
+              // User was at bottom but xterm jumped - restore to bottom
+              this.xterm.scrollToBottom()
+            } else if (leaveAltBuffer) {
+              // Leaving alternate buffer - restore saved position
+              const maxScroll = newBaseY
+              const targetY = Math.min(this.savedScrollPosition, maxScroll)
+              requestAnimationFrame(() => {
+                if (this.xterm) {
+                  this.xterm.scrollToLine(targetY)
+                }
+              })
+            } else if (!this.inAlternateBuffer && isAtBottom) {
+              // In normal buffer mode and user was at bottom, keep them there
+              this.xterm.scrollToBottom()
+            }
           }
         })
       }
