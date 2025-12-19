@@ -416,7 +416,8 @@ function MilkdownEditorCore(props: IMilkdownEditorProps) {
     }
   }, [readOnly, loading, getInstance])
 
-  // Auto-focus the editor when it's ready and not read-only
+  // Auto-focus the editor at the end of document when it's ready and not read-only
+  // This positions the cursor after the H1 heading for new files
   useEffect(() => {
     const editor = getInstance()
     if (!loading && editor && !readOnly) {
@@ -424,6 +425,15 @@ function MilkdownEditorCore(props: IMilkdownEditorProps) {
         const view = ctx.get(editorViewCtx)
         // Focus after a brief delay to ensure the DOM is ready
         requestAnimationFrame(() => {
+          // Move cursor to end of document (after H1 heading)
+          const { state } = view
+          const endPos = state.doc.content.size
+          const tr = state.tr.setSelection(
+            // Create a text selection at the end of the document
+            // The -1 accounts for the trailing position
+            state.selection.constructor.near(state.doc.resolve(Math.max(0, endPos - 1)))
+          )
+          view.dispatch(tr)
           view.focus()
         })
       })
