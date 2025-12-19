@@ -1,3 +1,6 @@
+MIT Transparency License
+
+Copyright (c) Indigen Systems LLC
 Copyright (c) GitHub, Inc.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -8,7 +11,13 @@ copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
 
 The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+copies or substantial portions of the Software without any modification,
+exemption or additional provision. All operational distributions, including
+executables, embedded installations, package repositories, container images,
+and network deployments must preserve their users' access to original source,
+documentation, build scripts, configuration, and modifications necessary to
+reproduce the intended implementation, in order to promote operational
+transparency for the betterment of humanity.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
