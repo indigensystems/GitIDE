@@ -242,6 +242,7 @@ import { TypedBaseStore } from './base-store'
 import { MergeTreeResult } from '../../models/merge'
 import { promiseWithMinimumTimeout } from '../promise'
 import { BackgroundFetcher } from './helpers/background-fetcher'
+import { GitHeadWatcher } from './helpers/git-head-watcher'
 import { RepositoryStateCache } from './repository-state-cache'
 import { readEmoji } from '../read-emoji'
 import { Emoji } from '../emoji'
@@ -504,6 +505,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   /** The background fetcher for the currently selected repository. */
   private currentBackgroundFetcher: BackgroundFetcher | null = null
+
+  /** Watches .git/HEAD for external branch changes (e.g., via CLI). */
+  private currentHeadWatcher: GitHeadWatcher | null = null
 
   private currentBranchPruner: BranchPruner | null = null
 
@@ -1984,6 +1988,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.stopPullRequestUpdater()
     this._clearBanner()
     this.stopBackgroundPruner()
+    this.stopHeadWatcher()
 
     if (repository == null) {
       return Promise.resolve(null)
@@ -2095,11 +2100,12 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.stopBackgroundFetching()
     this.stopPullRequestUpdater()
     this.stopBackgroundPruner()
+    this.stopHeadWatcher()
 
     this.startBackgroundFetching(repository, !previouslySelectedRepository)
     this.startPullRequestUpdater(repository)
-
     this.startBackgroundPruner(repository)
+    this.startHeadWatcher(repository)
 
     this.addUpstreamRemoteIfNeeded(repository)
 
@@ -2164,6 +2170,27 @@ export class AppStore extends TypedBaseStore<IAppState> {
       backgroundFetcher.stop()
       this.currentBackgroundFetcher = null
     }
+  }
+
+  private stopHeadWatcher() {
+    const headWatcher = this.currentHeadWatcher
+    if (headWatcher) {
+      headWatcher.stop()
+      this.currentHeadWatcher = null
+    }
+  }
+
+  private startHeadWatcher(repository: Repository) {
+    if (this.currentHeadWatcher) {
+      this.currentHeadWatcher.stop()
+    }
+
+    const watcher = new GitHeadWatcher(
+      repository,
+      (r) => this._refreshRepository(r)
+    )
+    watcher.start()
+    this.currentHeadWatcher = watcher
   }
 
   private refreshMentionables(repository: GitHubRepository) {
