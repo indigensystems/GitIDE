@@ -13,7 +13,7 @@ import { indent } from '@milkdown/plugin-indent'
 import { trailing } from '@milkdown/plugin-trailing'
 import { listItemBlockComponent } from '@milkdown/components/list-item-block'
 import { replaceAll, callCommand, $prose } from '@milkdown/utils'
-import { Plugin, PluginKey } from '@milkdown/prose/state'
+import { Plugin, PluginKey, Selection } from '@milkdown/prose/state'
 import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
 
@@ -431,7 +431,7 @@ function MilkdownEditorCore(props: IMilkdownEditorProps) {
           const tr = state.tr.setSelection(
             // Create a text selection at the end of the document
             // The -1 accounts for the trailing position
-            state.selection.constructor.near(state.doc.resolve(Math.max(0, endPos - 1)))
+            Selection.near(state.doc.resolve(Math.max(0, endPos - 1)))
           )
           view.dispatch(tr)
           view.focus()
