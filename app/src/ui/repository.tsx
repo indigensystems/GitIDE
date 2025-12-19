@@ -654,6 +654,24 @@ export class RepositoryView extends React.Component<
     this.setState({ openCodeTabs: newTabs })
   }
 
+  /** Handle file renamed via H1 heading change (Obsidian-style) */
+  private onCodeFileRenamed = (oldPath: string, newPath: string) => {
+    const { openCodeTabs, activeCodeTab } = this.state
+
+    // Update the tab with the new path
+    const newTabs = openCodeTabs.map(t =>
+      t.filePath === oldPath ? { ...t, filePath: newPath } : t
+    )
+
+    // Update active tab if it was the renamed file
+    const newActiveTab = activeCodeTab === oldPath ? newPath : activeCodeTab
+
+    this.setState({
+      openCodeTabs: newTabs,
+      activeCodeTab: newActiveTab,
+    })
+  }
+
   private onOpenTerminal = async () => {
     const repositoryPath = this.props.repository.path
     const { spawn } = require('child_process')
@@ -1053,6 +1071,7 @@ export class RepositoryView extends React.Component<
         activatedTerminals={this.state.activatedTerminals}
         onTerminalActivate={this.onTerminalActivate}
         onTerminalDoneWorking={this.onTerminalDoneWorking}
+        onFileRenamed={this.onCodeFileRenamed}
       />
     )
   }

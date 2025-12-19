@@ -1,4 +1,5 @@
 import * as React from 'react'
+import * as Path from 'path'
 import { useEffect, useCallback, useRef } from 'react'
 import { Editor, rootCtx, defaultValueCtx, editorViewCtx } from '@milkdown/core'
 import { Milkdown, MilkdownProvider, useEditor, useInstance } from '@milkdown/react'
@@ -11,7 +12,8 @@ import { cursor } from '@milkdown/plugin-cursor'
 import { indent } from '@milkdown/plugin-indent'
 import { trailing } from '@milkdown/plugin-trailing'
 import { listItemBlockComponent } from '@milkdown/components/list-item-block'
-import { replaceAll, callCommand } from '@milkdown/utils'
+import { replaceAll, callCommand, $prose } from '@milkdown/utils'
+import { Plugin, PluginKey } from '@milkdown/prose/state'
 import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
 
@@ -24,6 +26,10 @@ interface IMilkdownEditorProps {
   readonly onSave: () => void
   /** Whether the editor should be read-only */
   readonly readOnly?: boolean
+  /** Base directory for resolving relative image paths */
+  readonly baseDir?: string
+  /** Called when the first H1 heading changes (for Obsidian-like file renaming) */
+  readonly onH1Change?: (newH1: string) => void
 }
 
 /** Formatting toolbar for the Milkdown editor */
@@ -222,14 +228,80 @@ function FormattingToolbar({ readOnly }: { readOnly?: boolean }) {
   )
 }
 
+/** Creates a plugin that resolves relative image paths to absolute file:// URLs */
+function createImageResolverPlugin(baseDir: string | undefined) {
+  const imageResolverKey = new PluginKey('imageResolver')
+
+  return $prose(() => new Plugin({
+    key: imageResolverKey,
+    props: {
+      nodeViews: {
+        image: (node, view, getPos) => {
+          const dom = document.createElement('img')
+          const src = node.attrs.src as string
+
+          // Resolve relative paths to absolute file:// URLs
+          if (baseDir && src && !src.startsWith('http://') && !src.startsWith('https://') && !src.startsWith('file://') && !src.startsWith('data:')) {
+            const absolutePath = Path.resolve(baseDir, src)
+            dom.src = `file://${absolutePath}`
+          } else {
+            dom.src = src
+          }
+
+          if (node.attrs.alt) {
+            dom.alt = node.attrs.alt as string
+          }
+          if (node.attrs.title) {
+            dom.title = node.attrs.title as string
+          }
+
+          return {
+            dom,
+            update: (updatedNode) => {
+              if (updatedNode.type.name !== 'image') return false
+              const updatedSrc = updatedNode.attrs.src as string
+              if (baseDir && updatedSrc && !updatedSrc.startsWith('http://') && !updatedSrc.startsWith('https://') && !updatedSrc.startsWith('file://') && !updatedSrc.startsWith('data:')) {
+                const absolutePath = Path.resolve(baseDir, updatedSrc)
+                dom.src = `file://${absolutePath}`
+              } else {
+                dom.src = updatedSrc
+              }
+              if (updatedNode.attrs.alt) {
+                dom.alt = updatedNode.attrs.alt as string
+              }
+              if (updatedNode.attrs.title) {
+                dom.title = updatedNode.attrs.title as string
+              }
+              return true
+            },
+            destroy: () => {},
+          }
+        }
+      }
+    }
+  }))
+}
+
+/** Extract the first H1 heading text from markdown content */
+function extractFirstH1(markdown: string): string | null {
+  const match = markdown.match(/^#\s+(.+)$/m)
+  return match ? match[1].trim() : null
+}
+
 /** Inner component that sets up the editor with hooks */
 function MilkdownEditorCore(props: IMilkdownEditorProps) {
-  const { content, onChange, onSave, readOnly } = props
+  const { content, onChange, onSave, readOnly, baseDir, onH1Change } = props
 
   // Track if this is the initial mount to avoid replacing content on first render
   const isInitialMount = useRef(true)
   // Track the last content we set to avoid feedback loops
   const lastSetContent = useRef(content)
+  // Track the last H1 to detect changes
+  const lastH1 = useRef<string | null>(extractFirstH1(content))
+  // Track if the editor is ready (to avoid firing H1 change during initialization)
+  const isEditorReady = useRef(false)
+  // Debounce timer for H1 changes
+  const h1DebounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Ref for readOnly to use in callbacks without causing re-renders
   const readOnlyRef = useRef(readOnly)
   readOnlyRef.current = readOnly
@@ -237,13 +309,29 @@ function MilkdownEditorCore(props: IMilkdownEditorProps) {
   // Stable callback refs to avoid recreating the editor
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
+  const onH1ChangeRef = useRef(onH1Change)
+  onH1ChangeRef.current = onH1Change
+
+  // Ref for baseDir to use in the editor setup
+  const baseDirRef = useRef(baseDir)
+  baseDirRef.current = baseDir
+
+  // Create image resolver plugin with baseDir
+  const imageResolverPlugin = React.useMemo(
+    () => createImageResolverPlugin(baseDir),
+    [baseDir]
+  )
 
   // Set up the editor
   useEditor((root) => {
+    // Ensure we have at least an empty paragraph for the cursor to appear
+    // Empty markdown content creates an empty doc with no editable nodes
+    const initialContent = content || '\n'
+
     return Editor.make()
       .config((ctx) => {
         ctx.set(rootCtx, root)
-        ctx.set(defaultValueCtx, content)
+        ctx.set(defaultValueCtx, initialContent)
 
         // Set up change listener
         ctx.get(listenerCtx).markdownUpdated((_, markdown) => {
@@ -251,6 +339,29 @@ function MilkdownEditorCore(props: IMilkdownEditorProps) {
           if (!readOnlyRef.current && markdown !== lastSetContent.current) {
             lastSetContent.current = markdown
             onChangeRef.current(markdown)
+
+            // Check if H1 changed for Obsidian-like file renaming
+            // Only fire after editor is ready to avoid initialization issues
+            // Debounce to avoid firing while user is still typing
+            if (isEditorReady.current && onH1ChangeRef.current) {
+              const currentH1 = extractFirstH1(markdown)
+              if (currentH1 !== null && currentH1 !== lastH1.current) {
+                // Clear any pending H1 change callback
+                if (h1DebounceTimer.current) {
+                  clearTimeout(h1DebounceTimer.current)
+                }
+                // Store the new H1 value for the debounced callback
+                const newH1Value = currentH1
+                // Debounce H1 changes - wait 2 seconds after user stops typing
+                h1DebounceTimer.current = setTimeout(() => {
+                  // Check that the value is still different from the last saved H1
+                  if (newH1Value !== lastH1.current && onH1ChangeRef.current) {
+                    lastH1.current = newH1Value
+                    onH1ChangeRef.current(newH1Value)
+                  }
+                }, 2000)
+              }
+            }
           }
         })
       })
@@ -263,7 +374,8 @@ function MilkdownEditorCore(props: IMilkdownEditorProps) {
       .use(cursor)
       .use(indent)
       .use(trailing)
-  }, []) // Empty deps - only create editor once
+      .use(imageResolverPlugin)
+  }, [imageResolverPlugin]) // Recreate editor when baseDir changes
 
   // Get editor instance for dynamic updates
   const [loading, getInstance] = useInstance()
@@ -278,6 +390,13 @@ function MilkdownEditorCore(props: IMilkdownEditorProps) {
     const editor = getInstance()
     if (!loading && editor && content !== lastSetContent.current) {
       lastSetContent.current = content
+      // Update lastH1 to match the new content's H1 (prevents false rename triggers when switching files)
+      lastH1.current = extractFirstH1(content)
+      // Clear any pending H1 rename debounce
+      if (h1DebounceTimer.current) {
+        clearTimeout(h1DebounceTimer.current)
+        h1DebounceTimer.current = null
+      }
       editor.action(replaceAll(content))
     }
   }, [content, loading, getInstance])
@@ -296,6 +415,40 @@ function MilkdownEditorCore(props: IMilkdownEditorProps) {
       })
     }
   }, [readOnly, loading, getInstance])
+
+  // Auto-focus the editor when it's ready and not read-only
+  useEffect(() => {
+    const editor = getInstance()
+    if (!loading && editor && !readOnly) {
+      editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx)
+        // Focus after a brief delay to ensure the DOM is ready
+        requestAnimationFrame(() => {
+          view.focus()
+        })
+      })
+    }
+  }, [loading, getInstance, readOnly])
+
+  // Mark editor as ready after initialization (with a longer delay to ensure stability)
+  // The editor needs time to fully initialize all contexts before we can safely call onH1Change
+  useEffect(() => {
+    if (!loading) {
+      const timer = setTimeout(() => {
+        isEditorReady.current = true
+      }, 500) // Increased from 100ms to 500ms for more stability
+      return () => {
+        clearTimeout(timer)
+        isEditorReady.current = false
+        // Also clean up any pending H1 debounce timer
+        if (h1DebounceTimer.current) {
+          clearTimeout(h1DebounceTimer.current)
+          h1DebounceTimer.current = null
+        }
+      }
+    }
+    return undefined
+  }, [loading])
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {

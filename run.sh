@@ -1,8 +1,37 @@
 #!/bin/bash
 
-# Build and run GitIDE in production mode (cross-platform)
+# Build and run GitIDE (cross-platform)
+# Usage: ./run.sh [--dev|--prod]
+#   --dev   Build and run development version (default)
+#   --prod  Build and run production version
 
 set -e
+
+# Parse arguments
+BUILD_MODE="dev"
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --dev)
+            BUILD_MODE="dev"
+            shift
+            ;;
+        --prod)
+            BUILD_MODE="prod"
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: ./run.sh [--dev|--prod]"
+            echo "  --dev   Build and run development version (default)"
+            echo "  --prod  Build and run production version"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: ./run.sh [--dev|--prod]"
+            exit 1
+            ;;
+    esac
+done
 
 # Check Node.js version (requires 20+)
 NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
@@ -99,34 +128,42 @@ case "$(uname -s)" in
         ;;
 esac
 
-echo "Building production app with $PKG_MANAGER..."
-$PKG_MANAGER run build:prod
+# Build based on mode
+# Both dev and prod now use the same app name (GitIDE) so they share local storage
+if [ "$BUILD_MODE" = "prod" ]; then
+    echo "Building production app with $PKG_MANAGER..."
+    $PKG_MANAGER run build:prod
+else
+    echo "Building development app with $PKG_MANAGER..."
+    $PKG_MANAGER run build:dev
+fi
+APP_NAME="GitIDE"
 
-echo "Launching GitIDE..."
+echo "Launching GitIDE ($BUILD_MODE mode)..."
 
 case "$(uname -s)" in
     Darwin)
         # macOS
         if [ "$(uname -m)" = "arm64" ]; then
-            open "./dist/GitIDE-darwin-arm64/GitIDE.app"
+            open "./dist/${APP_NAME}-darwin-arm64/${APP_NAME}.app"
         else
-            open "./dist/GitIDE-darwin-x64/GitIDE.app"
+            open "./dist/${APP_NAME}-darwin-x64/${APP_NAME}.app"
         fi
         ;;
     Linux)
         # Linux
         if [ "$(uname -m)" = "x86_64" ]; then
-            "./dist/GitIDE-linux-x64/gitide"
+            "./dist/${APP_NAME}-linux-x64/gitide"
         else
-            "./dist/GitIDE-linux-arm64/gitide"
+            "./dist/${APP_NAME}-linux-arm64/gitide"
         fi
         ;;
     MINGW*|MSYS*|CYGWIN*)
         # Windows (Git Bash, MSYS, Cygwin)
         if [ "$PROCESSOR_ARCHITECTURE" = "AMD64" ]; then
-            "./dist/GitIDE-win32-x64/GitIDE.exe"
+            "./dist/${APP_NAME}-win32-x64/GitIDE.exe"
         else
-            "./dist/GitIDE-win32-arm64/GitIDE.exe"
+            "./dist/${APP_NAME}-win32-arm64/GitIDE.exe"
         fi
         ;;
     *)

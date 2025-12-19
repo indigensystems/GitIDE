@@ -1,9 +1,8 @@
 import { bundleID, companyName, productName, version } from './package.json'
 
 export function getProductName() {
-  return process.env.NODE_ENV === 'development'
-    ? `${productName}-dev`
-    : productName
+  // Always use same product name so dev and prod share the same app data
+  return productName
 }
 
 export function getCompanyName() {

@@ -1,3 +1,6 @@
+// Set this before importing webpack config so it knows we're running dev server
+process.env.WEBPACK_DEV_SERVER = 'true'
+
 import webpack from 'webpack'
 import DevMiddleware from 'webpack-dev-middleware'
 import HotMiddleware from 'webpack-hot-middleware'

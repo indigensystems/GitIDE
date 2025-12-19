@@ -47,6 +47,8 @@ interface ICodeViewContentProps {
   readonly onTerminalActivate?: (terminalId: string) => void
   /** Callback when user clicks "Done Working" to close the terminal */
   readonly onTerminalDoneWorking?: (terminalTabPath: string) => void
+  /** Callback when a markdown file is renamed via H1 heading change */
+  readonly onFileRenamed?: (oldPath: string, newPath: string) => void
 }
 
 interface ICodeViewContentState {
@@ -67,7 +69,6 @@ export class CodeViewContent extends React.Component<
   private _isMounted = false
   private _currentLoadingPath: string | null = null
   private autoSaveTimeout: ReturnType<typeof setTimeout> | null = null
-  private readonly AUTO_SAVE_DELAY = 1500 // Auto-save after 1.5 seconds of no typing
 
   public constructor(props: ICodeViewContentProps) {
     super(props)
@@ -76,7 +77,7 @@ export class CodeViewContent extends React.Component<
       isLoading: false,
       error: null,
       isBinary: false,
-      isEditing: false,
+      isEditing: true, // Default to edit mode
       editedContent: '',
       isSaving: false,
     }
@@ -128,7 +129,7 @@ export class CodeViewContent extends React.Component<
           isLoading: false,
           error: null,
           isBinary: false,
-          isEditing: false,
+          isEditing: true, // Keep edit mode as default
           editedContent: '',
         })
       }
@@ -167,7 +168,7 @@ export class CodeViewContent extends React.Component<
       error: null,
       content: null,
       isBinary: false,
-      isEditing: false,
+      isEditing: true, // Keep edit mode when loading new files
       editedContent: '',
     })
 
@@ -307,10 +308,13 @@ export class CodeViewContent extends React.Component<
       clearTimeout(this.autoSaveTimeout)
     }
 
-    // Schedule a new auto-save
-    this.autoSaveTimeout = setTimeout(() => {
-      this.performAutoSave()
-    }, this.AUTO_SAVE_DELAY)
+    // Schedule a new auto-save using the delay from settings (default 1500ms)
+    const delay = this.props.editorSettings?.autoSaveDelay ?? 1500
+    if (delay > 0) {
+      this.autoSaveTimeout = setTimeout(() => {
+        this.performAutoSave()
+      }, delay)
+    }
   }
 
   /** Perform the auto-save */
@@ -346,6 +350,62 @@ export class CodeViewContent extends React.Component<
       if (hasUnsavedChanges) {
         this.scheduleAutoSave()
       }
+    }
+  }
+
+  /** Handler for H1 heading changes - renames the file Obsidian-style */
+  private onH1Change = async (newH1: string) => {
+    const { activeTab, onFileRenamed } = this.props
+    if (!activeTab || !onFileRenamed) return
+
+    // Sanitize the new filename (remove invalid characters)
+    const sanitized = newH1
+      .replace(/[<>:"/\\|?*]/g, '') // Remove invalid filename chars
+      .replace(/\s+/g, ' ')          // Collapse whitespace
+      .trim()
+
+    if (!sanitized) return
+
+    // Get current file info
+    const dir = Path.dirname(activeTab)
+    const ext = Path.extname(activeTab)
+    const currentBasename = Path.basename(activeTab, ext)
+
+    // Don't rename if it's the same name
+    if (sanitized === currentBasename) return
+
+    const newPath = Path.join(dir, sanitized + ext)
+
+    // Check if file already exists
+    try {
+      await FSE.access(newPath)
+      // File exists, don't overwrite
+      console.warn(`Cannot rename: file already exists at ${newPath}`)
+      return
+    } catch {
+      // File doesn't exist, we can proceed
+    }
+
+    // IMPORTANT: Clear any pending auto-save to prevent it from writing to the old path
+    if (this.autoSaveTimeout) {
+      clearTimeout(this.autoSaveTimeout)
+      this.autoSaveTimeout = null
+    }
+
+    // Just rename the file - auto-save has already saved content by now (2 second debounce)
+    try {
+      await FSE.rename(activeTab, newPath)
+      // Update the cache with new path
+      const cached = this.contentCache.get(activeTab)
+      this.contentCache.delete(activeTab)
+      if (cached) {
+        this.contentCache.set(newPath, cached)
+      }
+      // Notify parent to update tabs
+      onFileRenamed(activeTab, newPath)
+      this.props.onTabUnsavedChange(newPath, false)
+    } catch (error) {
+      console.error('Failed to rename file:', error)
     }
   }
 
@@ -497,31 +557,13 @@ export class CodeViewContent extends React.Component<
     )
   }
 
-  private onToggleEditMode = () => {
-    const { isEditing, content } = this.state
-    if (isEditing) {
-      // Switching to read-only mode - save first if there are changes
-      this.onSaveClick()
-    } else {
-      // Switching to edit mode
-      this.setState({
-        isEditing: true,
-        editedContent: content || ''
-      })
-    }
-  }
-
   private renderMarkdownContent() {
-    const { activeTab, repositoryPath, openTabs } = this.props
-    const { content, isEditing, editedContent, isSaving } = this.state
+    const { activeTab } = this.props
+    const { content, isEditing, editedContent } = this.state
 
     if (content === null || !activeTab) {
       return this.renderEmptyState()
     }
-
-    const relativePath = Path.relative(repositoryPath, activeTab)
-    const currentTab = openTabs.find(t => t.filePath === activeTab)
-    const hasUnsavedChanges = currentTab?.hasUnsavedChanges ?? false
 
     // Check if mode is locked
     const modeLock = this.props.editorSettings?.modeLock
@@ -534,39 +576,21 @@ export class CodeViewContent extends React.Component<
 
     return (
       <div className="code-view-content markdown-view milkdown-active">
-        <div className="file-header">
-          <Octicon symbol={octicons.markdown} />
-          <span className="file-path">
-            {relativePath}
-            {hasUnsavedChanges && <span className="unsaved-indicator">*</span>}
-          </span>
-          <div className="file-actions">
-            {!isModeLocked && (
-              <button
-                className={`edit-toggle-button ${effectiveIsEditing ? 'editing' : 'readonly'}`}
-                onClick={this.onToggleEditMode}
-                disabled={isSaving}
-                title={effectiveIsEditing ? 'Switch to read-only mode' : 'Switch to edit mode'}
-              >
-                <Octicon symbol={effectiveIsEditing ? octicons.eye : octicons.pencil} />
-                {effectiveIsEditing ? 'Read' : 'Edit'}
-              </button>
-            )}
-          </div>
-        </div>
         <MilkdownEditor
           content={effectiveIsEditing ? editedContent : content}
           onChange={this.onCodeMirrorChange}
           onSave={this.onSaveClick}
           readOnly={!effectiveIsEditing}
+          baseDir={Path.dirname(activeTab)}
+          onH1Change={this.onH1Change}
         />
       </div>
     )
   }
 
   private renderFileContent() {
-    const { activeTab, repositoryPath, openTabs } = this.props
-    const { content, isEditing, editedContent, isSaving } = this.state
+    const { activeTab } = this.props
+    const { content, isEditing, editedContent } = this.state
 
     if (content === null || !activeTab) {
       return this.renderEmptyState()
@@ -576,11 +600,6 @@ export class CodeViewContent extends React.Component<
     if (this.isMarkdownFile(activeTab)) {
       return this.renderMarkdownContent()
     }
-
-    const relativePath = Path.relative(repositoryPath, activeTab)
-    const currentTab = openTabs.find(t => t.filePath === activeTab)
-    const hasUnsavedChanges = currentTab?.hasUnsavedChanges ?? false
-    const lines = content.split('\n')
 
     // Check if mode is locked
     const modeLock = this.props.editorSettings?.modeLock
@@ -593,27 +612,6 @@ export class CodeViewContent extends React.Component<
 
     return (
       <div className="code-view-content codemirror-active">
-        <div className="file-header">
-          <Octicon symbol={this.getFileIcon(activeTab)} />
-          <span className="file-path">
-            {relativePath}
-            {hasUnsavedChanges && <span className="unsaved-indicator">*</span>}
-          </span>
-          <span className="line-count">{lines.length} lines</span>
-          <div className="file-actions">
-            {!isModeLocked && (
-              <button
-                className={`edit-toggle-button ${effectiveIsEditing ? 'editing' : 'readonly'}`}
-                onClick={this.onToggleEditMode}
-                disabled={isSaving}
-                title={effectiveIsEditing ? 'Switch to read-only mode' : 'Switch to edit mode'}
-              >
-                <Octicon symbol={effectiveIsEditing ? octicons.eye : octicons.pencil} />
-                {effectiveIsEditing ? 'Read' : 'Edit'}
-              </button>
-            )}
-          </div>
-        </div>
         <div className="editor-container codemirror-wrapper">
           <CodeMirrorEditor
             content={effectiveIsEditing ? editedContent : content}

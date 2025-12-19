@@ -730,7 +730,14 @@ export class CodeViewSidebar extends React.Component<
 
     try {
       if (creatingType === 'file') {
-        await fs.promises.writeFile(itemPath, '')
+        // For markdown files, pre-populate with an H1 heading using the filename
+        const ext = Path.extname(newItemName.trim()).toLowerCase()
+        let initialContent = ''
+        if (['.md', '.markdown', '.mdx'].includes(ext)) {
+          const baseName = Path.basename(newItemName.trim(), ext)
+          initialContent = `# ${baseName}\n\n`
+        }
+        await fs.promises.writeFile(itemPath, initialContent)
         this.refreshFileTree()
         this.props.onFileCreated?.(itemPath)
       } else {

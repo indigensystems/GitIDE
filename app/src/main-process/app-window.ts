@@ -202,9 +202,10 @@ export class AppWindow {
     })
 
     this.window.webContents.once('did-finish-load', () => {
-      if (process.env.NODE_ENV === 'development') {
-        this.window.webContents.openDevTools()
-      }
+      // DevTools disabled - was causing window not to show in dev mode
+      // if (process.env.NODE_ENV === 'development') {
+      //   this.window.webContents.openDevTools()
+      // }
 
       this._loadTime = now() - startLoad
 
@@ -216,10 +217,10 @@ export class AppWindow {
     })
 
     this.window.webContents.on('did-fail-load', () => {
-      // Only open DevTools in development mode
-      if (process.env.NODE_ENV === 'development') {
-        this.window.webContents.openDevTools()
-      }
+      // DevTools disabled - was causing window not to show in dev mode
+      // if (process.env.NODE_ENV === 'development') {
+      //   this.window.webContents.openDevTools()
+      // }
       this.window.show()
     })
 

@@ -2522,12 +2522,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
     // Working our way from left to right (i.e. giving priority to the leftmost
     // pane when we need to constrain the width)
     //
-    // 220 was determined as the minimum value since it is the smallest width
-    // that will still fit the placeholder text in the branch selector textbox
-    // of the history tab
+    // 350 is the minimum width to fit all the tabs (Code, Changes, History, Issues, Tasks, Terminal)
+    // without them getting cut off or overlapping
     const maxSidebarWidth =
       available - Math.max(toolbarButtonsMinWidth, tutorialMinWidth)
-    this.sidebarWidth = constrain(this.sidebarWidth, 220, maxSidebarWidth)
+    this.sidebarWidth = constrain(this.sidebarWidth, 350, maxSidebarWidth)
 
     // Now calculate the width we have left to distribute for the other panes
     available -= clamp(this.sidebarWidth)

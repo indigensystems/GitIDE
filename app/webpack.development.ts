@@ -37,12 +37,17 @@ const getPortOrDefault = () => {
 }
 
 const port = getPortOrDefault()
+
+// Only use hot reload when running dev server (not when building for packaging)
+const isDevServer = process.env.WEBPACK_DEV_SERVER === 'true'
 const webpackHotModuleReloadUrl = `webpack-hot-middleware/client?path=http://localhost:${port}/__webpack_hmr`
-const publicPath = `http://localhost:${port}/build/`
+const publicPath = isDevServer ? `http://localhost:${port}/build/` : ''
 
 const rendererConfig = merge({}, common.renderer, config, {
   entry: {
-    renderer: [webpackHotModuleReloadUrl, getRendererEntryPoint()],
+    renderer: isDevServer
+      ? [webpackHotModuleReloadUrl, getRendererEntryPoint()]
+      : getRendererEntryPoint(),
   },
   output: {
     publicPath,
