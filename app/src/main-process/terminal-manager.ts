@@ -8,6 +8,22 @@ import * as pty from 'node-pty'
 // 10000 lines * ~150 chars avg = ~1.5MB max buffer per terminal
 const OUTPUT_BUFFER_SIZE = 1500000
 
+/**
+ * Get the default shell for the current platform.
+ * - Windows: PowerShell if available, otherwise cmd.exe
+ * - macOS/Linux: Uses SHELL environment variable or falls back to /bin/bash
+ */
+function getDefaultShell(): string {
+  if (__WIN32__) {
+    // Use Windows PowerShell which is available on all modern Windows versions
+    const systemRoot = process.env.SystemRoot || 'C:\\Windows'
+    return `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
+  }
+
+  // macOS and Linux
+  return process.env.SHELL || '/bin/bash'
+}
+
 interface ITerminalInstance {
   id: string
   window: BrowserWindow
@@ -24,26 +40,39 @@ const terminals = new Map<string, ITerminalInstance>()
 export function createTerminal(window: BrowserWindow, cwd: string): string {
   const id = uuid()
 
-  const shell = process.env.SHELL || '/bin/bash'
+  const shell = getDefaultShell()
 
   console.log(`[Terminal] Creating terminal ${id}, shell: ${shell}, cwd: ${cwd}`)
+
+  // Build environment variables based on platform
+  const baseEnv: { [key: string]: string } = {
+    ...process.env,
+    TERM: 'xterm-256color',
+    TERM_PROGRAM: 'GitHubDesktop',
+    TERM_PROGRAM_VERSION: '1.0.0',
+  } as { [key: string]: string }
+
+  if (__WIN32__) {
+    // Windows-specific environment
+    baseEnv.COMSPEC = process.env.COMSPEC || 'C:\\Windows\\System32\\cmd.exe'
+    baseEnv.USERPROFILE = os.homedir()
+  } else {
+    // macOS/Linux environment
+    baseEnv.SHELL = shell
+    baseEnv.HOME = os.homedir()
+    baseEnv.LANG = process.env.LANG || 'en_US.UTF-8'
+    // Prevent any shell integration scripts from triggering external apps (macOS-specific)
+    if (__DARWIN__) {
+      baseEnv.__CFBundleIdentifier = 'com.github.GitHubClient'
+    }
+  }
 
   const ptyProcess = pty.spawn(shell, [], {
     name: 'xterm-256color',
     cols: 80,
     rows: 24,
     cwd,
-    env: {
-      ...process.env,
-      TERM: 'xterm-256color',
-      TERM_PROGRAM: 'GitHubDesktop',
-      TERM_PROGRAM_VERSION: '1.0.0',
-      SHELL: shell,
-      HOME: os.homedir(),
-      LANG: process.env.LANG || 'en_US.UTF-8',
-      // Prevent any shell integration scripts from triggering external apps
-      __CFBundleIdentifier: 'com.github.GitHubClient',
-    } as { [key: string]: string },
+    env: baseEnv,
   })
 
   const instance: ITerminalInstance = {
