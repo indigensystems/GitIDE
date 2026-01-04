@@ -30,6 +30,9 @@ const commonConfig: webpack.Configuration = {
         use: [
           {
             loader: 'ts-loader',
+            options: {
+              transpileOnly: true,
+            },
           },
         ],
         exclude: /node_modules/,

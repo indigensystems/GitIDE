@@ -270,6 +270,67 @@ function moveAnalysisFiles() {
   }
 }
 
+function fixWinptyBuild(nodePtyDir: string) {
+  // Fix winpty build issue on Windows (gyp can't find batch files)
+  const winptySrc = path.join(nodePtyDir, 'deps', 'winpty', 'src')
+  const genDir = path.join(winptySrc, 'gen')
+  const winptyGyp = path.join(winptySrc, 'winpty.gyp')
+  const bindingGyp = path.join(nodePtyDir, 'binding.gyp')
+
+  // Create gen directory and GenVersion.h
+  mkdirSync(genDir, { recursive: true })
+  const versionFile = path.join(nodePtyDir, 'deps', 'winpty', 'VERSION.txt')
+  const version = existsSync(versionFile)
+    ? readFileSync(versionFile, 'utf8').trim()
+    : '0.4.4-dev'
+  const genVersionH = `// AUTO-GENERATED - winpty build fix
+const char GenVersion_Version[] = "${version}";
+const char GenVersion_Commit[] = "none";
+`
+  writeFileSync(path.join(genDir, 'GenVersion.h'), genVersionH)
+
+  // Patch winpty.gyp to use static values instead of running batch scripts
+  if (existsSync(winptyGyp)) {
+    let content = readFileSync(winptyGyp, 'utf8')
+    if (content.includes('GetCommitHash.bat')) {
+      content = content.replace(
+        /'<!\(cmd \/c "cd shared && GetCommitHash\.bat"\)'/g,
+        "'none'"
+      )
+      content = content.replace(
+        /'<!\(cmd \/c "cd shared && UpdateGenVersion\.bat <\(WINPTY_COMMIT_HASH\)"\)'/g,
+        "'gen'"
+      )
+      writeFileSync(winptyGyp, content)
+      console.log('    Patched winpty.gyp for Windows build compatibility')
+    }
+
+    // Remove Spectre mitigation requirement
+    if (content.includes('SpectreMitigation')) {
+      content = readFileSync(winptyGyp, 'utf8')
+      content = content
+        .split('\n')
+        .filter(line => !line.includes('SpectreMitigation'))
+        .join('\n')
+      writeFileSync(winptyGyp, content)
+      console.log('    Removed Spectre mitigation from winpty.gyp')
+    }
+  }
+
+  // Remove Spectre mitigation from binding.gyp
+  if (existsSync(bindingGyp)) {
+    let content = readFileSync(bindingGyp, 'utf8')
+    if (content.includes('SpectreMitigation')) {
+      content = content
+        .split('\n')
+        .filter(line => !line.includes('SpectreMitigation'))
+        .join('\n')
+      writeFileSync(bindingGyp, content)
+      console.log('    Removed Spectre mitigation from binding.gyp')
+    }
+  }
+}
+
 function rebuildNodePtyForElectron(outRoot: string) {
   const nodePtyDir = path.join(outRoot, 'node_modules', 'node-pty')
   if (!existsSync(nodePtyDir)) {
@@ -285,15 +346,25 @@ function rebuildNodePtyForElectron(outRoot: string) {
   const buildDir = path.join(nodePtyDir, 'build')
   rmSync(buildDir, { recursive: true, force: true })
 
-  // Build with C++20 support for Electron
+  // Build with appropriate settings per platform
   const arch = process.env.TARGET_ARCH || os.arch()
-  const env = {
-    ...process.env,
-    CXX: 'clang++ -std=c++20',
-    CC: 'clang',
-  }
+  let env: NodeJS.ProcessEnv
+  let cmd: string
 
-  const cmd = `npx node-gyp rebuild --target=${electronVersion} --arch=${arch} --runtime=electron --dist-url=https://electronjs.org/headers`
+  if (process.platform === 'win32') {
+    // Windows - apply winpty fix first, then use MSVC
+    fixWinptyBuild(nodePtyDir)
+    env = { ...process.env }
+    cmd = `npx node-gyp rebuild --target=${electronVersion} --arch=${arch} --runtime=electron --dist-url=https://electronjs.org/headers --msvs_version=2022`
+  } else {
+    // macOS/Linux - use clang/gcc with C++20
+    env = {
+      ...process.env,
+      CXX: process.platform === 'darwin' ? 'clang++ -std=c++20' : 'g++ -std=c++20',
+      CC: process.platform === 'darwin' ? 'clang' : 'gcc',
+    }
+    cmd = `npx node-gyp rebuild --target=${electronVersion} --arch=${arch} --runtime=electron --dist-url=https://electronjs.org/headers`
+  }
 
   try {
     cp.execSync(cmd, { cwd: nodePtyDir, env, stdio: 'inherit' })

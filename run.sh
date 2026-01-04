@@ -68,21 +68,27 @@ if [[ "$(uname -s)" == MINGW* ]] || [[ "$(uname -s)" == MSYS* ]] || [[ "$(uname 
     fi
 fi
 
-# Detect package manager (prefer yarn, fall back to npm)
-if command -v yarn &> /dev/null; then
-    PKG_MANAGER="yarn"
-else
-    PKG_MANAGER="npm"
+# Require yarn
+if ! command -v yarn &> /dev/null; then
+    echo ""
+    echo "============================================================"
+    echo "  Yarn is required"
+    echo "============================================================"
+    echo ""
+    echo "This project requires Yarn to build. Please install it:"
+    echo ""
+    echo "  npm install -g yarn"
+    echo ""
+    echo "Then run this script again."
+    echo "============================================================"
+    exit 1
 fi
+PKG_MANAGER="yarn"
 
 # Install dependencies if node_modules doesn't exist
 if [ ! -d "app/node_modules" ]; then
-    echo "Installing dependencies with $PKG_MANAGER..."
-    if [ "$PKG_MANAGER" = "npm" ]; then
-        $PKG_MANAGER install --legacy-peer-deps
-    else
-        $PKG_MANAGER install
-    fi
+    echo "Installing dependencies with yarn..."
+    yarn install
 fi
 
 # Check if node-pty needs to be rebuilt for Electron
@@ -112,6 +118,42 @@ check_node_pty() {
     echo "$electron_version" > "$marker_file"
 }
 
+# Fix winpty build issue on Windows (gyp can't find batch files)
+fix_winpty_build() {
+    local pty_dir="app/node_modules/node-pty"
+    local winpty_src="$pty_dir/deps/winpty/src"
+    local gen_dir="$winpty_src/gen"
+    local winpty_gyp="$winpty_src/winpty.gyp"
+    local binding_gyp="$pty_dir/binding.gyp"
+
+    # Create gen directory and GenVersion.h
+    mkdir -p "$gen_dir"
+    local version=$(cat "$pty_dir/deps/winpty/VERSION.txt" 2>/dev/null || echo "0.4.4-dev")
+    cat > "$gen_dir/GenVersion.h" << GENEOF
+// AUTO-GENERATED - winpty build fix
+const char GenVersion_Version[] = "$version";
+const char GenVersion_Commit[] = "none";
+GENEOF
+
+    # Patch winpty.gyp to use static values instead of running batch scripts
+    if grep -q 'GetCommitHash.bat' "$winpty_gyp" 2>/dev/null; then
+        sed -i.bak "s|'<!(cmd /c \"cd shared && GetCommitHash.bat\")'|'none'|g" "$winpty_gyp"
+        sed -i.bak "s|'<!(cmd /c \"cd shared && UpdateGenVersion.bat <(WINPTY_COMMIT_HASH)\")'|'gen'|g" "$winpty_gyp"
+        rm -f "$winpty_gyp.bak"
+        echo "Patched winpty.gyp for Windows build compatibility"
+    fi
+
+    # Remove Spectre mitigation requirement from both gyp files
+    # (not all VS installations have Spectre-mitigated libraries)
+    for gyp_file in "$winpty_gyp" "$binding_gyp"; do
+        if grep -q "SpectreMitigation" "$gyp_file" 2>/dev/null; then
+            sed -i.bak "/'SpectreMitigation'/d" "$gyp_file"
+            rm -f "$gyp_file.bak"
+            echo "Removed Spectre mitigation from $(basename "$gyp_file")"
+        fi
+    done
+}
+
 # Rebuild node-pty with C++20 support for Electron
 rebuild_node_pty() {
     local electron_version="$1"
@@ -137,6 +179,11 @@ rebuild_node_pty() {
             ;;
         MINGW*|MSYS*|CYGWIN*)
             # Windows - use MSVC (node-gyp default), set C++20 via msvs_settings
+            # Fix winpty build issue first (must be called from repo root)
+            cd ../../..
+            fix_winpty_build
+            cd app/node_modules/node-pty
+
             # Determine architecture
             local arch="x64"
             if [ "$PROCESSOR_ARCHITECTURE" = "ARM64" ]; then
