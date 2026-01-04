@@ -41,6 +41,33 @@ if [ "$NODE_VERSION" -lt 20 ]; then
     exit 1
 fi
 
+# Windows-specific: Check for build tools
+if [[ "$(uname -s)" == MINGW* ]] || [[ "$(uname -s)" == MSYS* ]] || [[ "$(uname -s)" == CYGWIN* ]]; then
+    # Check if Visual Studio Build Tools are available
+    if ! command -v cl &> /dev/null; then
+        echo ""
+        echo "============================================================"
+        echo "  Windows Build Tools Required"
+        echo "============================================================"
+        echo ""
+        echo "To build native modules, you need Visual Studio Build Tools."
+        echo ""
+        echo "Quick install (run as Administrator in PowerShell):"
+        echo "  npm install -g windows-build-tools"
+        echo ""
+        echo "Or install manually:"
+        echo "  1. Download Visual Studio Build Tools from:"
+        echo "     https://visualstudio.microsoft.com/visual-cpp-build-tools/"
+        echo "  2. Install 'Desktop development with C++' workload"
+        echo ""
+        echo "After installing, restart your terminal and try again."
+        echo "============================================================"
+        echo ""
+        # Don't exit - node-gyp might still find the tools via other paths
+        echo "Attempting to continue anyway..."
+    fi
+fi
+
 # Detect package manager (prefer yarn, fall back to npm)
 if command -v yarn &> /dev/null; then
     PKG_MANAGER="yarn"
@@ -90,11 +117,44 @@ rebuild_node_pty() {
     local electron_version="$1"
     cd app/node_modules/node-pty
     rm -rf build
-    HOME="$HOME" CXX="clang++ -std=c++20" CC="clang" npx node-gyp rebuild \
-        --target="$electron_version" \
-        --arch="$(uname -m)" \
-        --runtime=electron \
-        --dist-url=https://electronjs.org/headers
+
+    case "$(uname -s)" in
+        Darwin)
+            # macOS - use clang with C++20
+            HOME="$HOME" CXX="clang++ -std=c++20" CC="clang" npx node-gyp rebuild \
+                --target="$electron_version" \
+                --arch="$(uname -m)" \
+                --runtime=electron \
+                --dist-url=https://electronjs.org/headers
+            ;;
+        Linux)
+            # Linux - use g++ with C++20
+            HOME="$HOME" CXX="g++ -std=c++20" CC="gcc" npx node-gyp rebuild \
+                --target="$electron_version" \
+                --arch="$(uname -m)" \
+                --runtime=electron \
+                --dist-url=https://electronjs.org/headers
+            ;;
+        MINGW*|MSYS*|CYGWIN*)
+            # Windows - use MSVC (node-gyp default), set C++20 via msvs_settings
+            # Determine architecture
+            local arch="x64"
+            if [ "$PROCESSOR_ARCHITECTURE" = "ARM64" ]; then
+                arch="arm64"
+            fi
+            npx node-gyp rebuild \
+                --target="$electron_version" \
+                --arch="$arch" \
+                --runtime=electron \
+                --dist-url=https://electronjs.org/headers \
+                --msvs_version=2022
+            ;;
+        *)
+            echo "Unsupported OS for node-pty rebuild: $(uname -s)"
+            exit 1
+            ;;
+    esac
+
     cd ../../..
 }
 
